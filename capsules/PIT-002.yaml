@@ -1,0 +1,64 @@
+id: PIT-002
+trigger_time: "2026-03-02 15:00"
+category: config
+severity: critical
+
+problem:
+  signal: "HTTP 404 on https://cloudcode-pa.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
+  description: |
+    直接用标准 Google Generative AI API 格式调用 Cloud Code Assist API，返回 404。
+    误以为 API 不可用或模型不存在，实际是端点格式完全错误。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "用 curl 测试标准 Gemini API 格式"
+    result: |
+      curl POST https://cloudcode-pa.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent
+      body: { "contents": [...], "generationConfig": {} }
+      → 404 Not Found
+  - step: "怀疑模型名称不对，尝试不同的模型 ID"
+    result: "所有模型名都返回 404"
+  - step: "怀疑是网络或认证问题"
+    result: "网络连通（0.1s 响应），token 有效，但依然 404"
+
+correct_process:
+  - step: "阅读 pi-ai 源码找到正确的端点格式"
+    detail: |
+      文件: node_modules/@mariozechner/pi-ai/dist/providers/google-gemini-cli.js
+      正确端点: POST https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse
+  - step: "使用正确的请求体结构"
+    detail: |
+      Cloud Code Assist 的请求体需要外层包装：
+      {
+        "project": "<projectId>",
+        "model": "gemini-3-pro-preview",
+        "request": {
+          "contents": [{"role":"user","parts":[{"text":"hello"}]}],
+          "generationConfig": {"maxOutputTokens": 8192}
+        },
+        "userAgent": "pi-coding-agent",
+        "requestId": "pi-<timestamp>-<random>"
+      }
+  - step: "添加必要的 Headers"
+    detail: |
+      Authorization: Bearer <access_token>
+      User-Agent: google-cloud-sdk vscode_cloudshelleditor/0.1
+      X-Goog-Api-Client: gl-node/22.17.0
+      Client-Metadata: {"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}
+  - step: "验证"
+    detail: "gemini-2.5-flash 和 gemini-3-pro-preview 都在 0.1 秒内返回 Hello"
+
+root_cause: |
+  google-gemini-cli 提供商使用的是 Cloud Code Assist API，完全不同于标准 Google Generative AI API。
+  三大区别：
+  1. 端点路径: /v1internal:streamGenerateContent（不是 /v1beta/models/{model}:generateContent）
+  2. 认证方式: Bearer token（不是 ?key= 参数）
+  3. 请求体结构: contents 包在 request 对象内，外层还有 project/model/userAgent
+confidence: 1.0
+blast_radius:
+  files:
+    - "直接 API 调试脚本"
+  scope: "所有对 google-gemini-cli 的手动 API 测试和调试"

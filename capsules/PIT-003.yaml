@@ -1,0 +1,53 @@
+id: PIT-003
+trigger_time: "2026-03-01 20:00"
+category: config
+severity: high
+
+problem:
+  signal: "⚠️ Can't reach the OpenClaw browser control service"
+  description: |
+    Telegram 机器人调用浏览器功能时报错，无法连接到 OpenClaw 的浏览器控制服务。
+    浏览器服务使用了默认的 chrome profile，需要安装 Chrome 扩展，而无头服务器无法安装扩展。
+  env_fingerprint:
+    platform: linux (headless server)
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "使用默认配置启动 OpenClaw gateway"
+    result: "浏览器控制服务默认使用 chrome profile"
+  - step: "通过 Telegram 发送需要浏览器的指令"
+    result: "报错 'Can't reach the OpenClaw browser control service'"
+  - step: "检查 Chrome 进程"
+    result: "Chrome 没有启动，因为 chrome profile 需要扩展来建立通信通道"
+
+correct_process:
+  - step: "在 openclaw.json 中切换默认 profile 为 openclaw"
+    detail: |
+      openclaw.json 添加：
+      {
+        "browser": {
+          "defaultProfile": "openclaw",
+          "headless": true,
+          "noSandbox": true
+        }
+      }
+      openclaw profile 使用内置的 Playwright/Chromium，通过 CDP 通信，不需要扩展。
+  - step: "重启 OpenClaw gateway"
+    detail: "kill 旧进程 → 重新启动"
+  - step: "验证"
+    detail: |
+      openclaw browser start → 成功
+      openclaw browser open "https://example.com" → 成功
+      openclaw browser screenshot → 截图保存到 ~/.openclaw/media/browser/
+
+root_cause: |
+  OpenClaw 有两种浏览器 profile：
+  - chrome: 连接用户的 Chrome 浏览器，通过 Chrome 扩展通信。适合桌面用户。
+  - openclaw: 内置 Playwright Chromium，通过 CDP 直接通信。适合服务器/无头环境。
+  默认 profile 是 chrome，在无头服务器上无法使用，必须显式切换为 openclaw。
+confidence: 1.0
+blast_radius:
+  files:
+    - "~/.openclaw/openclaw.json"
+  scope: "所有浏览器相关功能（截图、页面导航、内容提取）"

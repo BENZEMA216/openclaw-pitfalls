@@ -1,0 +1,51 @@
+id: PIT-006
+trigger_time: "2026-03-02 15:43"
+category: config
+severity: medium
+
+problem:
+  signal: "Error: BAIDU_API_KEY must be set"
+  description: |
+    baidu-search 技能需要百度 AI 搜索 API Key，未配置时模型尝试调用会报错，
+    并且会消耗模型的工具调用轮次，拖慢整个响应流程。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "模型收到搜索请求，自动选择 baidu-search 技能"
+    result: "执行 python3 search.py → 报错 BAIDU_API_KEY must be set"
+  - step: "模型继续尝试其他搜索方式"
+    result: "浪费了一轮工具调用，增加延迟"
+
+correct_process:
+  - step: "方案 A：配置 API Key"
+    detail: |
+      在 openclaw.json 中添加环境变量：
+      {
+        "agents": {
+          "defaults": {
+            "env": {
+              "BAIDU_API_KEY": "your-key-here"
+            }
+          }
+        }
+      }
+  - step: "方案 B：禁用技能（推荐，如果不需要百度搜索）"
+    detail: |
+      mv ~/.openclaw/skills/baidu-search/SKILL.md ~/.openclaw/skills/baidu-search/SKILL.md.disabled
+      重启 OpenClaw gateway。
+      替代方案：使用 OpenClaw 内置的 Brave Web Search。
+  - step: "验证"
+    detail: "发送搜索请求，确认不再报错。模型应使用 web_search 工具或其他可用技能。"
+
+root_cause: |
+  baidu-search 技能在 SKILL.md metadata 中声明了 "requires": {"env": ["BAIDU_API_KEY"]}，
+  但 OpenClaw 只把这个作为提示，不会在缺少环境变量时自动禁用技能。
+  模型不知道 API Key 缺失，会尝试调用然后失败。
+confidence: 0.95
+blast_radius:
+  files:
+    - "~/.openclaw/skills/baidu-search/SKILL.md"
+  scope: "百度搜索功能 + 影响模型工具选择效率"

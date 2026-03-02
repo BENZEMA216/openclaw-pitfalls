@@ -1,0 +1,43 @@
+id: PIT-009
+trigger_time: "2026-03-01 18:00"
+category: env
+severity: medium
+
+problem:
+  signal: "nohup: failed to run command 'openclaw': No such file or directory"
+  description: |
+    通过 SSH 远程重启 OpenClaw gateway 时，nohup 找不到 openclaw 命令，
+    因为 NVM 管理的 Node.js 环境没有在当前 shell 中加载。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0 (via NVM)
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "SSH 登录服务器后直接执行 nohup openclaw gateway"
+    result: "报错 'No such file or directory'"
+  - step: "尝试 which openclaw"
+    result: "找不到命令，因为 NVM 的 PATH 没有加载"
+
+correct_process:
+  - step: "先加载 NVM 环境"
+    detail: |
+      export NVM_DIR="/root/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  - step: "再启动 OpenClaw"
+    detail: |
+      nohup openclaw gateway > /root/openclaw-gateway.log 2>&1 &
+  - step: "或者使用完整路径"
+    detail: |
+      nohup /root/.nvm/versions/node/v22.22.0/bin/openclaw gateway > /root/openclaw-gateway.log 2>&1 &
+  - step: "验证"
+    detail: "pgrep -f openclaw-gateway → 返回 PID"
+
+root_cause: |
+  NVM 通过修改 PATH 来管理 Node.js 版本，需要执行 nvm.sh 才能把 Node 二进制加入 PATH。
+  SSH non-interactive shell 或 nohup 子进程不会自动 source .bashrc/.zshrc，
+  所以 NVM 环境不会自动加载。
+confidence: 1.0
+blast_radius:
+  files: []
+  scope: "所有通过 NVM 安装的全局命令（openclaw, npm, node 等）"

@@ -1,0 +1,60 @@
+id: PIT-010
+trigger_time: "2026-03-02 14:00"
+category: repair
+severity: high
+
+problem:
+  signal: "Profile google-gemini-cli:default timed out (possible rate limit). Trying next account..."
+  description: |
+    OpenClaw 日志显示 google-gemini-cli 模型提供商超时，误判为 API 不可用或被限流。
+    实际上直接调用 API 只需 0.1 秒，模型完全正常。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "用户通过 Telegram 发消息，机器人长时间无响应"
+    result: "等待 600 秒后显示 'embedded run timeout'"
+  - step: "查看 gateway 日志看到 'timed out (possible rate limit)'"
+    result: "误以为是 Google API 限流或 token 失效"
+  - step: "用错误的 API 格式测试（标准 Gemini API 格式）"
+    result: "返回 404，更加确信 API 有问题（实际是端点格式错误，参见 PIT-002）"
+
+correct_process:
+  - step: "用正确的端点格式直接测试 API"
+    detail: |
+      参见 PIT-002 的 correct_process。
+      用 /v1internal:streamGenerateContent 端点 + 正确的请求体格式测试。
+      结果: 0.1 秒响应，模型完全正常。
+  - step: "排查真正的超时原因"
+    detail: |
+      超时可能原因：
+      1. 首次调用需要 model warm-up（gemini-3-pro-preview 预热较慢）
+      2. OpenClaw 默认的 runTimeout 为 600s，apiTimeout 可能过低
+      3. 复杂的工具调用链（多轮 tool use）累积超时
+  - step: "调整超时配置"
+    detail: |
+      在 openclaw.json 中显式设置：
+      {
+        "agents": {
+          "defaults": {
+            "runTimeout": 900,
+            "apiTimeout": 120
+          }
+        }
+      }
+  - step: "验证"
+    detail: "查看最近的 session jsonl，确认模型正常返回 assistant 消息"
+
+root_cause: |
+  这是一个误诊问题。真正的原因链：
+  1. OpenClaw 超时 → 显示 "timed out" → 让人以为 API 有问题
+  2. 用错误的 API 格式测试 → 404 → 更加确信 API 有问题
+  3. 实际上 API 完全正常，超时原因可能是 model warm-up 或复杂工具链
+  教训：排查问题时，先确认测试方法本身是正确的，再下结论。
+confidence: 0.9
+blast_radius:
+  files:
+    - "~/.openclaw/openclaw.json"
+  scope: "模型响应速度和超时处理"

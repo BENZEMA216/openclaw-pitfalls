@@ -1,0 +1,51 @@
+id: PIT-001
+trigger_time: "2026-03-01 15:30"
+category: config
+severity: critical
+
+problem:
+  signal: "⚠️ Agent failed before reply: No API key found for provider 'google-gemini-cli'. Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json"
+  description: |
+    将 Google Gemini CLI OAuth 凭证写入 ~/.openclaw/credentials/oauth.json 后，
+    OpenClaw 并未自动将其合并到 auth-profiles.json，导致模型调用时找不到凭证。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "按 pi-ai 源码中的 mergeOAuthFileIntoStore 逻辑，在 ~/.openclaw/credentials/oauth.json 写入 OAuth 凭证"
+    result: "写入成功，文件格式正确"
+  - step: "重启 OpenClaw gateway，发送测试消息"
+    result: "报错 'No API key found for provider google-gemini-cli'"
+  - step: "检查 auth-profiles.json"
+    result: "文件中没有 google-gemini-cli:default 条目，自动合并未生效"
+
+correct_process:
+  - step: "手动将 OAuth 凭证写入 auth-profiles.json"
+    detail: |
+      在 ~/.openclaw/agents/main/agent/auth-profiles.json 的 profiles 对象中，
+      手动添加 "google-gemini-cli:default" 条目：
+      {
+        "type": "oauth",          # 必须是 "oauth" 而不是 "api_key"
+        "provider": "google-gemini-cli",
+        "refresh": "<refresh_token>",
+        "access": "<access_token>",
+        "expires": <timestamp_ms>,
+        "projectId": "<project_id>",
+        "email": "<email>"
+      }
+  - step: "重启 OpenClaw gateway"
+    detail: "kill 旧进程 → 加载 NVM → nohup openclaw gateway"
+  - step: "验证"
+    detail: "发送测试消息，确认模型正常响应"
+
+root_cause: |
+  pi-ai 库的 mergeOAuthFileIntoStore 函数理论上会在 gateway 启动时自动读取
+  oauth.json 并合并到 auth store，但在当前版本中该自动合并机制未触发。
+  可能是因为 gateway 已经有了旧的 auth store 缓存，或者合并时机在 agent 初始化之后。
+confidence: 0.95
+blast_radius:
+  files:
+    - "~/.openclaw/agents/main/agent/auth-profiles.json"
+  scope: "所有使用 google-gemini-cli 提供商的模型调用"

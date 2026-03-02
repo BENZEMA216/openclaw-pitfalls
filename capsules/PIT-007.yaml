@@ -1,0 +1,43 @@
+id: PIT-007
+trigger_time: "2026-03-01 22:00"
+category: env
+severity: medium
+
+problem:
+  signal: "uv: command not found"
+  description: |
+    taobao (maishou) 技能依赖 uv (Python 包管理器) 来管理虚拟环境，
+    服务器上没有预装 uv，导致技能无法运行。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "通过 Telegram 发送淘宝搜索指令"
+    result: "maishou 技能尝试用 uv 创建/激活虚拟环境，报错 uv: command not found"
+  - step: "检查 SKILL.md metadata"
+    result: |
+      metadata 中声明了 "requires": {"bins": ["python3"]}
+      但实际还依赖 uv，metadata 未声明
+
+correct_process:
+  - step: "安装 uv"
+    detail: |
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      source ~/.bashrc
+      uv --version  # 验证安装
+  - step: "重新测试 taobao 技能"
+    detail: "发送搜索指令，确认技能可以正常创建 venv 并执行搜索"
+  - step: "注意"
+    detail: |
+      maishou 技能只支持商品关键词搜索，不支持按店铺/品牌搜索。
+      如果需要店铺级操作，需要用浏览器直接访问。
+
+root_cause: |
+  技能的 SKILL.md metadata 中 requires.bins 只声明了 python3，
+  但脚本运行时依赖 uv 来管理虚拟环境。这是技能作者的 metadata 声明不完整。
+confidence: 1.0
+blast_radius:
+  files: []
+  scope: "taobao/maishou 技能"

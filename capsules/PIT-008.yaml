@@ -1,0 +1,50 @@
+id: PIT-008
+trigger_time: "2026-03-02 14:30"
+category: env
+severity: low
+
+problem:
+  signal: "大量 bixi.alicdn.com/punish/ tab 在浏览器中弹出"
+  description: |
+    用 OpenClaw 浏览器打开淘宝搜索页后，淘宝的反爬机制触发，
+    弹出多个验证页面 tab，占用内存并干扰正常操作。
+  env_fingerprint:
+    platform: linux (headless, server IP)
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "用 openclaw browser open 打开淘宝搜索页"
+    result: "搜索页加载成功，但触发了淘宝的 IP 风控"
+  - step: "检查 browser tabs"
+    result: "发现 5-6 个 bixi.alicdn.com/punish/ 验证弹窗 tab"
+  - step: "内存占用飙升"
+    result: "每个 tab 占用 50-100MB 内存，影响服务器性能"
+
+correct_process:
+  - step: "定期清理多余 tab"
+    detail: |
+      openclaw browser tabs  # 列出所有 tab
+      openclaw browser close <tab-id>  # 逐个关闭 punish tab
+  - step: "Playwright 脚本中添加 networkidle 超时 fallback"
+    detail: |
+      try:
+          page.goto(url, timeout=20000, wait_until="networkidle")
+      except:
+          page.goto(url, timeout=30000, wait_until="load")
+      淘宝页面会持续加载资源，networkidle 可能永远不会触发。
+  - step: "设置中文 Accept-Language header"
+    detail: |
+      page.set_extra_http_headers({"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
+      减少被识别为海外爬虫的概率。
+  - step: "注意"
+    detail: "服务器 IP 如果频繁访问会被封禁，建议控制访问频率，或考虑使用代理。"
+
+root_cause: |
+  服务器 IP（腾讯云数据中心）容易被淘宝识别为非正常用户流量。
+  headless Chrome 的默认 User-Agent 和行为模式也会触发风控。
+  这是反爬机制的正常行为，不是配置问题。
+confidence: 0.85
+blast_radius:
+  files: []
+  scope: "淘宝/天猫相关的浏览器操作"

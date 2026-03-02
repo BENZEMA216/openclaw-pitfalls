@@ -1,0 +1,52 @@
+id: PIT-005
+trigger_time: "2026-03-02 10:00"
+category: env
+severity: medium
+
+problem:
+  signal: "BrowserStartEvent timed out after 30.0s and interrupted any processing of 1 child events"
+  description: |
+    从 ClawHub 安装的 browser-use 技能使用 Python CLI (browser-use 命令)，
+    在服务器上启动浏览器时超时，无法使用。
+  env_fingerprint:
+    platform: linux (headless)
+    node: v22.22.0
+    python: "3.11"
+    browser_use: "0.12.0"
+
+error_process:
+  - step: "通过 ClawHub 安装 browser-use 技能"
+    result: "npx clawhub install browser-use → 安装成功"
+  - step: "运行 browser-use CLI 启动浏览器"
+    result: |
+      browser-use --browser chromium open
+      → 等待 30 秒后超时
+      → Error: BrowserStartEvent timed out after 30.0s
+  - step: "尝试不同参数和浏览器类型"
+    result: "chromium/firefox 都超时，v0.12.0 的 CLI 在无头环境有 bug"
+
+correct_process:
+  - step: "用 Playwright 直接编写替代脚本 browse.py"
+    detail: |
+      安装 Playwright:
+      pip install playwright && playwright install chromium
+
+      编写 browse.py 脚本，使用 playwright.sync_api 直接控制浏览器。
+      支持 screenshot / images / text 三个子命令。
+  - step: "放置脚本到 skill 目录"
+    detail: "~/.openclaw/skills/browser-use/scripts/browse.py"
+  - step: "验证"
+    detail: |
+      python3 browse.py screenshot "https://www.baidu.com" -o /tmp/test.png
+      → 截图成功保存
+
+root_cause: |
+  browser-use v0.12.0 的 Python CLI 在启动浏览器时有一个事件循环 bug，
+  BrowserStartEvent 事件的 watchdog 超时时间太短（30s），
+  且在无头服务器上 Chromium 启动可能需要额外时间。
+  直接使用 Playwright API 则完全正常。
+confidence: 0.9
+blast_radius:
+  files:
+    - "~/.openclaw/skills/browser-use/scripts/browse.py"
+  scope: "browser-use 技能的浏览器自动化功能"

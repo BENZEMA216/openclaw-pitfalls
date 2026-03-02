@@ -1,0 +1,58 @@
+id: PIT-004
+trigger_time: "2026-03-01 20:30"
+category: config
+severity: high
+
+problem:
+  signal: "Config validation error / browser config keys not recognized"
+  description: |
+    将 headless 和 noSandbox 放在 browser profile 对象内部，
+    导致配置校验失败或被忽略，Chrome 仍然以 headed + sandbox 模式启动。
+  env_fingerprint:
+    platform: linux (root user)
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "在 browser.profiles.openclaw 下设置 headless 和 noSandbox"
+    result: |
+      写入配置：
+      {
+        "browser": {
+          "profiles": {
+            "openclaw": {
+              "headless": true,
+              "noSandbox": true
+            }
+          }
+        }
+      }
+      配置被忽略，Chrome 以默认参数启动。
+  - step: "Chrome 以 root 用户启动失败（sandbox 错误）"
+    result: "Chrome 报 sandbox 相关错误，无法启动"
+
+correct_process:
+  - step: "将 headless 和 noSandbox 放到 browser 顶级配置"
+    detail: |
+      {
+        "browser": {
+          "defaultProfile": "openclaw",
+          "headless": true,
+          "noSandbox": true
+        }
+      }
+      profile 对象只接受: cdpPort, cdpUrl, driver, color
+  - step: "验证"
+    detail: |
+      ps aux | grep chrome → 确认启动参数包含：
+      --headless=new --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage
+
+root_cause: |
+  OpenClaw 的 browser 配置中，headless 和 noSandbox 是全局设置（影响所有 profile），
+  不是 per-profile 的设置。源码中 profile schema 只定义了 cdpPort/cdpUrl/driver/color 四个字段，
+  其他字段会被静默忽略。
+confidence: 1.0
+blast_radius:
+  files:
+    - "~/.openclaw/openclaw.json"
+  scope: "浏览器启动参数"
