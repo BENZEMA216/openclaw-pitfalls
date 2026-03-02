@@ -1,0 +1,71 @@
+id: PIT-011
+trigger_time: "2026-03-02 16:52"
+category: env
+severity: medium
+
+problem:
+  signal: "kill -9 后 openclaw 进程自动重启，killall node 也无法停止"
+  description: |
+    尝试手动 kill OpenClaw gateway 进程后，几秒内进程自动重新出现（新 PID）。
+    killall -9 node 也无法彻底停止，导致误以为有守护进程或 cron 在保活。
+  env_fingerprint:
+    platform: linux
+    node: v22.22.0
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "用 kill -9 <PID> 杀掉 openclaw-gateway 进程"
+    result: "2 秒后新的 openclaw-gateway 进程出现（新 PID）"
+  - step: "用 killall -9 node 杀掉所有 node 进程"
+    result: "进程仍然自动重启"
+  - step: "检查 systemctl list-units（系统级）"
+    result: "找不到 openclaw 相关服务"
+  - step: "检查 supervisor 和 crontab"
+    result: "都没有 openclaw 相关配置"
+
+correct_process:
+  - step: "检查进程的父进程 (PPid)"
+    detail: |
+      ps -ef | grep openclaw
+      cat /proc/<PID>/status | grep PPid
+      → PPid 为 750
+      ps -ef | grep 750
+      → /usr/lib/systemd/systemd --user
+      这是 systemd 用户级实例，不是系统级的。
+  - step: "查找用户级 systemd 服务"
+    detail: |
+      systemctl --user list-units --type=service | grep openclaw
+      → openclaw-gateway.service loaded active running
+
+      服务文件位置：/root/.config/systemd/user/openclaw-gateway.service
+  - step: "用正确的方式管理 OpenClaw"
+    detail: |
+      # 重启
+      systemctl --user restart openclaw-gateway.service
+
+      # 停止
+      systemctl --user stop openclaw-gateway.service
+
+      # 查看状态
+      systemctl --user status openclaw-gateway.service
+
+      # 查看日志
+      journalctl --user -u openclaw-gateway.service -f
+  - step: "验证"
+    detail: "systemctl --user status openclaw-gateway.service → active (running)"
+
+root_cause: |
+  OpenClaw 安装时自动创建了用户级 systemd 服务（~/.config/systemd/user/openclaw-gateway.service），
+  并设置了 Restart=always，所以手动 kill 进程后 systemd 会自动重启它。
+  之前一直以为 OpenClaw 是通过 nohup 手动启动的（参见 PIT-009），
+  实际上 PIT-009 的场景是 SSH 进去用 nohup 临时启动，而正式环境已配置了 systemd 服务。
+
+  关键教训：
+  1. 系统级 systemctl 和用户级 systemctl --user 是两套独立的服务管理
+  2. 用户级服务不会出现在 systemctl list-units 中，需要加 --user 参数
+  3. 查进程的父进程是排查"进程被自动重启"的标准方法
+confidence: 1.0
+blast_radius:
+  files:
+    - "/root/.config/systemd/user/openclaw-gateway.service"
+  scope: "OpenClaw gateway 进程管理和重启操作"

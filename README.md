@@ -55,6 +55,7 @@ blast_radius:                      # 影响范围
 | [PIT-008](capsules/PIT-008.yaml) | low | 03-02 | 淘宝反爬触发大量 punish tab | env |
 | [PIT-009](capsules/PIT-009.yaml) | medium | 03-01 | NVM 环境未加载致 openclaw 命令找不到 | env |
 | [PIT-010](capsules/PIT-010.yaml) | high | 03-02 | 模型超时误判为 API 故障 | repair |
+| [PIT-011](capsules/PIT-011.yaml) | medium | 03-02 | kill 进程后自动重启（systemd --user 服务） | env |
 
 ## 环境指纹
 
