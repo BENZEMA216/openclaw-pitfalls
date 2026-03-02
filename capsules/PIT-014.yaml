@@ -1,0 +1,61 @@
+id: PIT-014
+trigger_time: "2026-03-02 21:40"
+category: config
+severity: critical
+
+problem:
+  signal: "Agent 不知道新安装的 skill（store-teardown），仍在用旧的方法处理任务"
+  description: |
+    在 /root/.openclaw/skills/ 下安装了新 skill（store-teardown），也重启了 gateway，
+    但 agent 在 Telegram 对话中完全不知道该 skill 的存在。它用浏览器搜索淘宝、
+    尝试安装 Playwright 等旧方法，即使 SKILL.md 明确禁止了这些行为。
+
+    原因是 OpenClaw 的 session skills snapshot 机制：session 创建时会拍一个
+    "技能快照"，之后不会自动更新。重启 gateway 不会更新已有 session 的快照。
+  env_fingerprint:
+    platform: linux
+    openclaw: "2026.2.9"
+
+error_process:
+  - step: "安装 store-teardown 到 /root/.openclaw/skills/"
+    result: "文件部署成功"
+  - step: "重启 openclaw-gateway"
+    result: "gateway 重启成功"
+  - step: "用户在 Telegram 发消息触发任务"
+    result: "agent 使用旧 session，skills snapshot 不含 store-teardown"
+  - step: "检查 sessions.json"
+    result: |
+      Telegram session 的 skillsSnapshot 中有 maishou、ecommerce-designer 等
+      （session 创建时就有的 skill），但没有 store-teardown（后安装的）。
+
+correct_process:
+  - step: "归档旧 session 文件"
+    detail: |
+      mkdir -p /root/.openclaw/agents/main/sessions/archive
+      mv /root/.openclaw/agents/main/sessions/<session-id>.jsonl archive/
+  - step: "清理 sessions.json 中的对应条目"
+    detail: |
+      用 python3 删除 sessions.json 中的 session 条目，
+      让 gateway 在下次消息时重建 session 并拍新快照。
+  - step: "重启 gateway"
+    detail: |
+      systemctl --user restart openclaw-gateway
+  - step: "验证新 session 的 skills snapshot"
+    detail: |
+      发送 Telegram 消息触发新 session 创建，然后检查 sessions.json
+      确认 skillsSnapshot 包含所有期望的 skill。
+
+root_cause: |
+  OpenClaw 的 session 管理机制：
+  1. Session 创建时会拍摄 skillsSnapshot（可用技能列表）
+  2. 这个 snapshot 嵌入到 agent 的 system prompt 中
+  3. 之后安装新 skill 不会更新已有 session 的 snapshot
+  4. 重启 gateway 也不会更新（只会在创建新 session 时重新扫描）
+
+  这意味着每次安装新 skill 后，必须手动清理旧 session 才能让 agent 看到新技能。
+  这是 OpenClaw 的 session 持久化机制的设计局限。
+confidence: 0.95
+blast_radius:
+  files:
+    - /root/.openclaw/agents/main/sessions/sessions.json
+  scope: "所有在安装新 skill 后未重建的 session"

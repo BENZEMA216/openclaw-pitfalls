@@ -1,0 +1,57 @@
+id: PIT-012
+trigger_time: "2026-03-02 21:00"
+category: env
+severity: critical
+
+problem:
+  signal: "store-teardown 技能 Telegram 执行超时 (600s embedded run timeout)"
+  description: |
+    用户在 Telegram 发送"找一下1747的店铺风格"，agent 花了 600 秒尝试各种
+    搜索方式（Google/Bing 浏览器搜索、ScraperAPI 搜索页、Playwright 脚本等），
+    全部失败或太慢，最终超时。但 agent 在过程中其实成功调用了 maishou 技能搜索
+    到了商品数据，却没有利用结果继续后续分析。
+  env_fingerprint:
+    platform: linux (headless, Tencent Cloud)
+    node: v22.22.0
+    openclaw: "2026.2.9"
+    agent_model: google-gemini-cli/gemini-3-pro-preview
+
+error_process:
+  - step: "agent 尝试 Google 搜索 '1747 淘宝店铺'"
+    result: "浏览器打开 Google → 搜索缓慢 → 没有有用结果"
+  - step: "agent 尝试 Bing 搜索"
+    result: "类似问题，浪费 2 分钟"
+  - step: "agent 用 taobao_fetch.py 抓取 s.taobao.com/search?q=1747"
+    result: "搜索页是 JS SPA，纯 HTML 模式提取到 0 个商品"
+  - step: "agent 尝试安装 Playwright 写爬虫脚本"
+    result: "ModuleNotFoundError: No module named 'playwright'"
+  - step: "agent 调用 maishou 技能搜索"
+    result: "成功找到 1747服饰 的商品数据和图片 URL，但没有继续利用"
+  - step: "agent 继续尝试其他方法，最终 600s 超时"
+    result: "embedded run timeout"
+
+correct_process:
+  - step: "在 SKILL.md 中明确指定搜索工具"
+    detail: |
+      路径 A（关键词搜索）: 使用 maishou 买手技能
+      cd /root/.openclaw/skills/taobao && uv run scripts/main.py search --source=1 --keyword='<品牌名>'
+      2 秒出结果，免费 API，返回 CSV 含商品标题/价格/图片 URL。
+  - step: "在 SKILL.md 开头加禁止事项"
+    detail: |
+      明确禁止 agent 使用浏览器搜索淘宝、安装 Playwright、用 Google/Bing 搜索。
+      减少 agent 在无效路径上浪费时间。
+  - step: "路径 B（直接 URL）保留 taobao_fetch.py"
+    detail: "用户提供店铺 URL 时，用 ScraperAPI 代理抓取截图和数据。"
+
+root_cause: |
+  SKILL.md 没有告诉 agent 可以用 maishou 技能搜索商品。agent 只知道 taobao_fetch.py，
+  而该脚本对搜索页（JS SPA）无效。agent 缺乏明确的工具指引，导致尝试了 5+ 种无效方法，
+  每种各浪费 1-2 分钟，累计超过 600s 超时限制。
+
+  关键教训：SKILL.md 必须告诉 agent "用什么工具做什么事"，不能让 agent 自己探索。
+  OpenClaw agent 的 600s 超时对探索式任务来说太短。
+confidence: 0.95
+blast_radius:
+  files:
+    - skills/store-teardown/SKILL.md
+  scope: "store-teardown 技能的关键词搜索场景"
