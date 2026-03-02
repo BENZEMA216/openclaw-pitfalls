@@ -34,7 +34,7 @@ store teardown https://shop.m.taobao.com/shop/xxx
 
 ## 完整工作流
 
-### Phase 0: 准备工作与平台路由
+### Phase 0: 准备工作
 
 1. 创建输出目录：
 
@@ -48,149 +48,72 @@ mkdir -p /tmp/store-teardown/images
    - 平台类型（淘宝 / 天猫 / 小红书 / 其他）
    - 分析时间戳
 
-3. **判断采集路径**：
-
-   根据 URL 域名选择数据采集路径：
-
-   | URL 包含 | 平台 | 采集路径 |
-   |----------|------|----------|
-   | `taobao.com` | 淘宝 | **路径 A: ScraperAPI 代理抓取** |
-   | `tmall.com` | 天猫 | **路径 A: ScraperAPI 代理抓取** |
-   | 其他域名 | 小红书等 | **路径 B: OpenClaw 浏览器直连** |
-
-   > **为什么需要双路径？**
-   > 淘宝/天猫会对服务器 IP 触发反爬验证（参考 PIT-008），`openclaw browser` 直连会被拦截。
-   > 路径 A 通过 ScraperAPI 代理访问，从页面嵌入的 JSON 中提取商品数据和 800x800 高清图，稳定可用。
-
 ---
 
-### Phase 1+2 路径 A: 淘宝/天猫 — ScraperAPI 代理抓取
+### Phase 1+2: 数据采集
 
-当 URL 属于 `taobao.com` 或 `tmall.com` 时，使用 `scripts/taobao_fetch.py` 抓取。
+**所有淘宝/天猫 URL 统一使用 `taobao_fetch.py`**，脚本会自动识别 URL 类型并选择最佳抓取模式：
 
-**步骤 A.1 — 运行 taobao_fetch.py 抓取商品数据和图片**
+- 首页 (www.taobao.com) → 纯 HTML，1 credit，提取商品数据 + 800x800 图片
+- 店铺页 (shop*.taobao.com) → 截图+渲染，10 credits，获取截图
+- 短链接 (m.tb.cn) → 自动解析真实 URL 后再抓取
+- 商品页 → 纯 HTML，1 credit
+
+> **重要**: 淘宝/天猫服务器 IP 会被反爬拦截（PIT-008），不要用 `openclaw browser`，只用 `taobao_fetch.py`。
+
+**步骤 1 — 运行 taobao_fetch.py**
 
 ```bash
 cd <skill_directory>
-uv run scripts/taobao_fetch.py "<store_url>" \
+uv run scripts/taobao_fetch.py "<url>" \
   -o /tmp/store-teardown \
-  --max-images 20 \
-  --image-size 800x800
+  --max-images 20
 ```
 
-> 环境变量 `SCRAPERAPI_KEY` 必须已设置。此脚本会自动：
-> - 通过 ScraperAPI 代理获取页面 HTML
-> - 从 `window.staticConfig` 等嵌入 JSON 提取商品数据（itemId、标题、价格、图片 URL）
-> - 下载商品的 800x800 白底高清图到 `/tmp/store-teardown/images/`
-> - 生成 `/tmp/store-teardown/items.json`（结构化商品数据）
-> - 生成 `/tmp/store-teardown/report.yaml`（抓取报告）
+脚本会自动：
+- 识别 URL 类型（首页/店铺/商品/短链接）
+- 选择最佳抓取模式（纯 HTML 或截图+渲染）
+- 解析短链接（m.tb.cn → 真实 URL）
+- 提取商品数据和图片
+- 生成 `report.yaml`、`items.json`、`screenshot.png`（如有）
 
-**步骤 A.2 — 检查抓取结果**
+**步骤 2 — 检查抓取结果**
 
 ```bash
 cat /tmp/store-teardown/report.yaml
-cat /tmp/store-teardown/items.json
-ls /tmp/store-teardown/images/
 ```
 
-确认：
-- `items.json` 中有商品数据（通常 8-30 个）
-- `images/` 目录有下载好的商品图片（product_01.png ~ product_XX.png）
-- `report.yaml` 中 `anti_scraping_signals` 为空（未触发反爬）
+根据结果判断获取到的素材：
+- **有截图** (`screenshot.png`): 可用于全页视觉分析
+- **有商品数据** (`items.json`): 可用于商品风格分析
+- **有商品图片** (`images/`): 可用于色彩和图片风格分析
 
-如果抓取失败（HTTP 非 200 或无商品数据），检查 `SCRAPERAPI_KEY` 是否有效，或尝试换一个店铺首页 URL。
+**步骤 3 — 如果需要更多商品图片**
 
-**步骤 A.3 — 准备分析素材**
-
-将下载的商品图片软链接到 screenshots 目录（供 Phase 4 色彩分析使用）：
+如果店铺页只拿到截图没有商品图片，可以额外抓取淘宝首页获取推荐商品图片：
 
 ```bash
+uv run scripts/taobao_fetch.py "https://www.taobao.com" \
+  -o /tmp/store-teardown/homepage \
+  --max-images 20
+```
+
+将图片复制到分析目录：
+
+```bash
+cp /tmp/store-teardown/homepage/images/* /tmp/store-teardown/images/ 2>/dev/null
 cp /tmp/store-teardown/images/*.png /tmp/store-teardown/screenshots/ 2>/dev/null
 cp /tmp/store-teardown/images/*.jpg /tmp/store-teardown/screenshots/ 2>/dev/null
 ```
 
-> **路径 A 的数据特点：**
-> - 有 800x800 高清商品白底图（适合分析图片风格、配色）
-> - 有结构化商品数据（标题、价格、标签）
-> - **没有全页截图**（ScraperAPI 免费套餐不支持截图，需 premium）
-> - **没有 Banner/轮播图**（嵌入 JSON 不包含 Banner 数据）
->
-> 因此 Phase 3 的分析需要基于商品图片进行，跳过 Banner 分析（步骤 3.4）。
-
-完成后直接跳转到 **Phase 3**。
-
----
-
-### Phase 1+2 路径 B: 其他平台 — OpenClaw 浏览器直连
-
-当 URL 不属于淘宝/天猫时，使用 OpenClaw 浏览器直连。
-
-**步骤 B.1 — 打开店铺首页**
+**对于非淘宝/天猫平台（如小红书）**，使用 OpenClaw 浏览器：
 
 ```
 openclaw browser open <store_url>
-```
-
-**步骤 B.2 — 等待页面完全加载**
-
-等待 3-5 秒让页面渲染完成，尤其是懒加载的商品图片。
-
-**步骤 B.3 — 全页截图**
-
-```
 openclaw browser screenshot --full-page
 ```
 
-截图将自动保存。将截图复制到工作目录：
-
-```bash
-cp <screenshot_path> /tmp/store-teardown/screenshots/homepage_full.png
-```
-
-**步骤 B.4 — 首屏截图（Banner 区域）**
-
-```
-openclaw browser screenshot
-```
-
-保存为 `/tmp/store-teardown/screenshots/homepage_above_fold.png`。
-
-**步骤 B.5 — 获取页面 ARIA 快照**
-
-```
-openclaw browser snapshot --format aria
-```
-
-ARIA 快照有助于理解页面结构层次（导航、分类、商品区块等）。
-
-**步骤 B.6 — 提取商品卡片图片 URL**
-
-对小红书平台：
-
-```
-openclaw browser evaluate "JSON.stringify(Array.from(document.querySelectorAll('img[src*=\"sns-webpic\"], img[src*=\"xhscdn\"], img.note-image')).map(img => ({src: img.src || img.dataset.src, alt: img.alt})))"
-```
-
-对其他平台：
-
-```
-openclaw browser evaluate "JSON.stringify(Array.from(document.querySelectorAll('img[src]')).map(img => ({src: img.src || img.dataset.src, alt: img.alt, width: img.naturalWidth, height: img.naturalHeight})).filter(i => i.width > 100))"
-```
-
-**步骤 B.7 — 提取 Banner / 轮播图**
-
-```
-openclaw browser evaluate "JSON.stringify(Array.from(document.querySelectorAll('.slider img, .banner img, [class*=\"carousel\"] img, [class*=\"slider\"] img, [class*=\"banner\"] img')).map(img => ({src: img.src || img.dataset.src, alt: img.alt})))"
-```
-
-**步骤 B.8 — 下载关键图片**
-
-```bash
-cd /tmp/store-teardown/images
-curl -o product_01.jpg "<image_url>"
-curl -o product_02.jpg "<image_url>"
-curl -o banner_01.jpg "<banner_url>"
-```
+然后使用 `openclaw browser evaluate` 提取图片 URL 并用 curl 下载。
 
 完成后继续 **Phase 3**。
 
@@ -198,141 +121,73 @@ curl -o banner_01.jpg "<banner_url>"
 
 ### Phase 3: 多模态视觉分析
 
-使用 gemini-3-pro-preview 模型对采集到的图片进行详细的视觉设计分析。
+使用 gemini-3-pro-preview 模型对采集到的图片进行视觉设计分析。
 
-> **路径 A（淘宝/天猫）**：用商品白底图 + items.json 数据进行分析，跳过步骤 3.4（Banner 分析）。
-> **路径 B（其他平台）**：用全页截图 + 商品图片进行完整分析。
+根据获取到的素材（截图 和/或 商品图片），选择对应的分析 prompt。
 
 **步骤 3.1 — 配色分析**
 
-将商品图片（路径 A）或全页截图（路径 B）交给多模态模型：
-
-路径 A prompt：
+将截图或商品图片交给多模态模型：
 
 ```
-请分析这些电商店铺的商品主图配色方案。这些是该店铺的商品白底展示图。请提取：
+请分析这些电商店铺图片的配色方案。请提取：
 
-1. 主色调（Primary Color）：商品图片中最常见的主体颜色，给出 HEX 值
-2. 辅助色（Secondary Color）：第二常见的颜色，给出 HEX 值
-3. 强调色（Accent Color）：商品中最抢眼的点缀色，给出 HEX 值
-4. 背景色（Background）：商品图片的背景色（通常为白色），给出 HEX 值
-5. 配色方案类型：是暖色调、冷色调、中性色、还是撞色？
-6. 配色的情绪感受：专业、活泼、奢华、清新、甜美、硬朗？
-7. 商品品类推测：基于图片内容判断这家店铺主营什么品类
-
-输出格式为 YAML。
-```
-
-路径 B prompt：
-
-```
-请分析这张电商店铺截图的配色方案。请提取：
-
-1. 主色调（Primary Color）：店铺最大面积使用的颜色，给出 HEX 值
+1. 主色调（Primary Color）：最大面积使用的颜色，给出 HEX 值
 2. 辅助色（Secondary Color）：第二多的颜色，给出 HEX 值
-3. 强调色（Accent Color）：用于按钮、价格、标签等吸引注意力的颜色，给出 HEX 值
-4. 背景色（Background）：页面主要背景色，给出 HEX 值
-5. 文字色（Text Color）：主要正文和标题的文字颜色，给出 HEX 值
-6. 配色方案类型：是暖色调、冷色调、中性色、还是撞色？
-7. 配色的情绪感受：专业、活泼、奢华、清新、甜美、硬朗？
+3. 强调色（Accent Color）：最抢眼的点缀色，给出 HEX 值
+4. 背景色（Background）：主要背景色，给出 HEX 值
+5. 配色方案类型：暖色调、冷色调、中性色、还是撞色？
+6. 配色的情绪感受：专业、活泼、奢华、清新、甜美、硬朗？
 
 输出格式为 YAML。
 ```
 
-**步骤 3.2 — 排版与字体分析**
+**步骤 3.2 — 排版与风格分析**
 
-> 路径 A 时：基于 items.json 的商品数据（标题风格、价格格式、标签文案）进行推测性分析。
-> 路径 B 时：基于截图进行完整的视觉分析。
-
-路径 A prompt：
-
-```
-以下是从一家淘宝/天猫店铺提取的商品数据（JSON 格式）和商品主图。
-请基于商品数据和图片分析这家店铺可能的排版和设计特征：
-
-商品数据：
-<items.json 内容>
-
-请分析：
-1. 商品品类和风格定位
-2. 商品图片的统一性：所有主图是否风格一致？
-3. 标题命名风格：简洁型、关键词堆砌型、卖点型？
-4. 价格带分布：低价走量、中端精品、还是高端？
-5. 营销标签风格：促销导向（全网低价）、品质导向（大牌折扣）、还是服务导向（晚发必赔）？
-
-输出格式为 YAML。
-```
-
-路径 B prompt：
+如果有截图：
 
 ```
 请分析这张电商店铺截图的排版和字体风格：
+1. 整体布局模式：瀑布流、网格、大图列表、还是混合？
+2. 卡片样式：圆角/直角？有无阴影/边框？
+3. 字体印象和文字层级
+4. 中文字体家族猜测
+输出格式为 YAML。
+```
 
-1. 整体布局模式：是瀑布流、网格（几列）、大图列表、还是混合布局？
-2. 间距风格：商品卡片之间的间距是紧凑、适中还是宽松？
-3. 卡片样式：圆角还是直角？有无阴影？有无边框？
-4. 字体印象：
-   - 标题：是粗壮的黑体风格、纤细的宋体风格、还是手写/艺术字体？
-   - 正文：标准黑体还是其他？
-   - 价格：是否有特殊的字体处理（如大号加粗、颜色高亮）？
-5. 文字层级：标题、副标题、价格、描述的大小比例关系
-6. 中文字体家族猜测（如：思源黑体、阿里巴巴普惠体、方正兰亭黑等）
+如果只有 items.json（无截图）：
 
+```
+以下是从店铺提取的商品数据。请分析：
+1. 商品品类和风格定位
+2. 标题命名风格：简洁型、关键词堆砌型、卖点型？
+3. 价格带分布：低价走量、中端精品、高端？
+4. 营销标签风格
+<items.json 内容>
 输出格式为 YAML。
 ```
 
 **步骤 3.3 — 图片风格分析**
 
-将商品图片交给多模态模型（两条路径使用相同的 prompt）：
-
 ```
-请分析这些电商店铺的商品图片风格：
-
-1. 摄影风格：棚拍（纯色背景）、场景拍（生活场景）、街拍、平铺拍摄、还是混合？
-2. 背景处理：纯白底、浅灰底、渐变色底、场景底、还是抠图合成？
-3. 光线风格：自然光、柔光棚拍、硬光、逆光、还是后期调色？
-4. 后期风格：高饱和、低饱和、复古胶片感、日系清新、还是原片风格？
-5. 模特/展示方式（如有）：
-   - 是否使用模特？全身/半身/特写？
-   - 模特姿态风格：自然随意、高冷、甜美、运动感？
-   - 如无模特：是商品特写、使用场景、还是创意摆拍？
-6. 图片比例：1:1 正方形、3:4 竖图、16:9 横图、还是混合？
-
+请分析这些商品图片风格：
+1. 摄影风格：棚拍、场景拍、街拍、平铺拍摄、混合？
+2. 背景处理：纯白底、浅灰底、渐变色底、场景底？
+3. 光线和后期风格
+4. 模特/展示方式
+5. 图片比例
 输出格式为 YAML。
 ```
 
-**步骤 3.4 — Banner 设计分析**
-
-> **路径 A（淘宝/天猫）时跳过此步骤**：ScraperAPI 纯 HTML 模式无法获取 Banner 图片。
-> 在设计简报中标注 `banner_design: "not_available (scraperapi_mode)"`。
-
-路径 B prompt：
+**步骤 3.4 — 整体调性总结**
 
 ```
-请分析这张电商店铺 Banner（轮播图/首屏大图）的设计特点：
-
-1. Banner 尺寸比例
-2. 构图方式：左文右图、居中排版、满屏图片、拼接式、还是其他？
-3. 文字排版：标题字号感觉、是否有副标题、文字位置
-4. 是否有促销元素：折扣标签、倒计时、活动标语？
-5. 设计手法：渐变叠加、蒙版处理、动效暗示（如箭头、滑动提示）？
-6. 整体质感：高端精致、大众促销、文艺小众、潮流年轻？
-
-输出格式为 YAML。
-```
-
-**步骤 3.5 — 整体调性总结**
-
-```
-综合以上所有商品图片和数据，请用一段话总结这家店铺的整体设计调性：
-
-1. 品牌定位感：奢侈品、轻奢、大众、快时尚、原创设计师、国潮、还是性价比？
-2. 目标客群印象：年龄段、性别倾向、风格偏好
-3. 设计成熟度（1-10 分）：与同类型头部店铺相比的设计水准
-4. 最突出的设计优点（1-2 个）
-5. 最明显的设计改进空间（1-2 个）
-6. 风格关键词（3-5 个词，如：极简、甜美、街头、复古、未来感）
-
+综合所有图片和数据，总结这家店铺的设计调性：
+1. 品牌定位感
+2. 目标客群印象
+3. 设计成熟度（1-10 分）
+4. 设计优点和改进空间
+5. 风格关键词（3-5 个）
 输出格式为 YAML。
 ```
 

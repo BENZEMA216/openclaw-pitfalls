@@ -65,28 +65,99 @@ TAOBAO_IMG_DOMAINS = [
     ".tbcdn.cn",
 ]
 
+# 短链接域名
+SHORT_LINK_DOMAINS = ["m.tb.cn", "s.click.taobao.com", "a.m.taobao.com"]
+
 
 def log(msg: str):
     print(f"[taobao-fetch] {msg}", flush=True)
 
 
 # ──────────────────────────────────────────────
+# URL 分类与预处理
+# ──────────────────────────────────────────────
+
+def classify_url(url: str) -> str:
+    """识别 URL 类型: homepage / search / store / product / short / unknown"""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+
+    if any(d in host for d in SHORT_LINK_DOMAINS):
+        return "short"
+    if host in ("www.taobao.com", "www.tmall.com", "taobao.com", "tmall.com"):
+        if parsed.path in ("", "/", "/index.htm"):
+            return "homepage"
+    if "s.taobao.com" in host and "/search" in parsed.path:
+        return "search"
+    if "shop" in host and ("taobao.com" in host or "tmall.com" in host):
+        return "store"
+    if "item.taobao.com" in host or "detail.tmall.com" in host:
+        return "product"
+    if "taobao.com" in host or "tmall.com" in host:
+        return "unknown"
+    return "unknown"
+
+
+def resolve_short_url(url: str) -> str:
+    """解析短链接 (m.tb.cn 等)，提取目标 URL。
+
+    先尝试直接 HTTP HEAD follow redirect；
+    如果失败，通过 ScraperAPI 获取 HTML 提取 var url = '...' 中的目标地址。
+    """
+    log(f"解析短链接: {url}")
+    try:
+        resp = requests.head(url, allow_redirects=True, timeout=10,
+                             headers={"User-Agent": "Mozilla/5.0"})
+        final = resp.url
+        if final and final != url and "taobao.com" in final or "tmall.com" in final:
+            log(f"  → {final[:120]}")
+            return final
+    except Exception:
+        pass
+
+    # 从 HTML 中提取 var url = '...'
+    try:
+        resp = requests.get(url, timeout=10,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        match = re.search(r"var\s+url\s*=\s*'([^']+)'", resp.text)
+        if match:
+            target = match.group(1)
+            log(f"  → {target[:120]}")
+            return target
+    except Exception:
+        pass
+
+    log("  短链接解析失败，使用原 URL")
+    return url
+
+
+# ──────────────────────────────────────────────
 # 网络层
 # ──────────────────────────────────────────────
 
-def fetch_page(api_key: str, url: str, screenshot: bool = True) -> dict:
-    """通过 ScraperAPI 获取页面内容，自动降级。
+def fetch_page(api_key: str, url: str, mode: str = "auto",
+               screenshot: bool = True) -> dict:
+    """通过 ScraperAPI 获取页面内容。
 
-    降级策略:
-      Level 1: screenshot + render (需要 premium)
-      Level 2: render only (可能需要 premium)
-      Level 3: 纯 HTML (免费套餐可用，商品数据在嵌入 JSON 中)
+    mode 参数:
+      "auto"       — 自动降级: screenshot → render → html
+      "screenshot" — 只尝试 screenshot+render（10 credits）
+      "render"     — 只尝试 JS 渲染（5-10 credits）
+      "html"       — 只用纯 HTML（1 credit，最快）
     """
-    modes = []
-    if screenshot:
-        modes.append(("截图+渲染", {"screenshot": "true", "render": "true"}))
-    modes.append(("JS渲染", {"render": "true"}))
-    modes.append(("纯HTML", {}))
+    if mode == "html":
+        modes = [("纯HTML", {})]
+    elif mode == "render":
+        modes = [("JS渲染", {"render": "true"})]
+    elif mode == "screenshot":
+        modes = [("截图+渲染", {"screenshot": "true", "render": "true"})]
+    else:  # auto
+        modes = []
+        if screenshot:
+            modes.append(("截图+渲染", {"screenshot": "true", "render": "true"}))
+        modes.append(("JS渲染", {"render": "true"}))
+        modes.append(("纯HTML", {}))
 
     resp = None
     final_mode = ""
@@ -345,6 +416,9 @@ def main():
                         help="不下载商品图片")
     parser.add_argument("--no-screenshot", action="store_true",
                         help="不尝试获取截图（跳过 premium 降级，更快）")
+    parser.add_argument("--mode", default="auto",
+                        choices=["auto", "screenshot", "render", "html"],
+                        help="抓取模式: auto(智能选择) screenshot(截图) render(渲染) html(纯HTML，最快)")
     parser.add_argument("--max-images", type=int, default=20,
                         help="最多下载多少张图片 (默认: 20)")
     parser.add_argument("--image-size", default="800x800",
@@ -362,11 +436,43 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "images").mkdir(exist_ok=True)
 
-    log(f"目标: {args.url}")
+    target_url = args.url
+
+    # ── 0. URL 预处理 ──
+    url_type = classify_url(target_url)
+    log(f"目标: {target_url}")
+    log(f"URL 类型: {url_type}")
+
+    # 解析短链接
+    if url_type == "short":
+        target_url = resolve_short_url(target_url)
+        url_type = classify_url(target_url)
+        log(f"解析后类型: {url_type}")
+
+    # 智能模式选择（仅 auto 模式时）
+    fetch_mode = args.mode
+    if fetch_mode == "auto":
+        if url_type == "homepage":
+            fetch_mode = "html"  # 首页: 纯 HTML，嵌入 JSON 有商品数据
+            log("  → 首页模式: 纯 HTML（1 credit）")
+        elif url_type == "store":
+            fetch_mode = "screenshot"  # 店铺页: 需要截图做视觉分析
+            log("  → 店铺模式: 截图+渲染（10 credits）")
+        elif url_type == "product":
+            fetch_mode = "html"  # 商品页: 纯 HTML 可能有商品数据
+            log("  → 商品页模式: 纯 HTML（1 credit）")
+        elif url_type == "search":
+            fetch_mode = "render"  # 搜索页: 需要 JS 渲染
+            log("  → 搜索模式: JS 渲染（10 credits）")
+        else:
+            fetch_mode = "html"  # 默认纯 HTML
+            log("  → 默认模式: 纯 HTML（1 credit）")
+
     log(f"输出: {output_dir}")
 
     # ── 1. 获取页面 ──
-    result = fetch_page(api_key, args.url, screenshot=not args.no_screenshot)
+    result = fetch_page(api_key, target_url, mode=fetch_mode,
+                        screenshot=not args.no_screenshot)
 
     if result["status_code"] != 200:
         log(f"❌ 请求失败: HTTP {result['status_code']}")
@@ -459,9 +565,12 @@ def main():
     # ── 8. 报告 ──
     report = {
         "fetch_result": {
-            "url": args.url,
+            "original_url": args.url,
+            "url": target_url,
+            "url_type": url_type,
             "final_url": result["final_url"],
             "status": "success",
+            "fetch_mode": fetch_mode,
             "mode": result["mode"],
             "http_status": result["status_code"],
             "elapsed_seconds": result["elapsed"],
