@@ -1,0 +1,47 @@
+id: PIT-018
+title: "OpenClaw Agent 行为层改造（2026-03-05）"
+date: "2026-03-05"
+category: agent-behavior
+severity: high
+tags: [openclaw, soul, agents, aesthetic, asset-management, behavior]
+
+trigger:
+  - "Agent 出图后不自检就发，发出空图说'完美还原'"
+  - "Agent 不读 aesthetic 文件，Preflight 形同虚设"
+  - "Agent 找不到自己的图片资产，问用户'哪个文件名'"
+  - "Agent 复用被用户否决的方案"
+  - "Thinking config 导致 gateway crash"
+
+error_process:
+  - "SOUL.md 过于冗长（2000+ tokens），把行为规则都塞进去"
+  - "aesthetic 文件（creo）不在 Every Session 协议里，只在 SOUL.md work rhythm 里提到"
+  - "MEMORY.md 的'已验证'标签错误，导致 agent 说'已打通抠图合成流'"
+  - "图片资产没有 catalog，agent 不知道自己有什么图"
+  - "media/ 路径限制，agent 无法发送 design-assets/ 里的文件"
+  - "openclaw.json 加了 thinking 字段，v2026.2.9 不支持 → gateway crash"
+
+correct_process:
+  - "SOUL.md 瘦身：只留身份/边界/工作节奏，行为规则移至 AGENTS.md"
+  - "AGENTS.md Every Session 增加步骤 5-8：读 aesthetic.md + fragments + patterns + 品牌档案"
+  - "在 AGENTS.md 行为红线增加：出图自检协议（6 项）、禁止问用户内部文件名"
+  - "creo → aesthetic 全面重命名：文件、GitHub repo、内部引用"
+  - "aesthetic.md 增加高频踩坑索引（F-004~F-009 快查）"
+  - "aesthetic-fragments.md 新增 F-006~F-010"
+  - "MEMORY.md 重写：移除错误'已验证'，改为⚠️已否决"
+  - "创建 asset-catalog.json（15 条记录，含 missing 字段）"
+  - "创建 media/design-assets → design-assets/ symlink"
+  - "脚本从 /tmp/design-pipeline/ 迁移到 /root/.openclaw/scripts/design-pipeline/（持久化）"
+  - "openclaw.json 移除 thinking 字段，gateway 恢复正常"
+  - "图片重命名：sw-product-0X → 语义化名称（如 sw-pants-male-model-walking-hires.jpg）"
+
+root_cause:
+  - "行为层 vs 工具层：工具够用，但 agent 执行流程有漏洞（不 Preflight，不自检）"
+  - "Session 架构认知错误：agent 不是持久进程，每条消息都是新的 LLM call"
+  - "workspace 文件是 system prompt，不读 = 不存在"
+
+outcome:
+  - "aesthetic Preflight 现在是强制的：Every Session 协议第 5-8 步"
+  - "出图自检协议嵌入 AGENTS.md 行为红线"
+  - "图片资产有 catalog 和快查表，agent 不再需要问用户"
+  - "行为红线第7条：禁止让用户说内部文件名"
+  - "发现白色短袖T恤照片丢失（历史 session 未归档），需要用户重新发送"
