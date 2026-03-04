@@ -1,0 +1,55 @@
+id: PIT-017
+trigger_time: "2026-03-04 19:30"
+category: config
+severity: high
+
+problem:
+  signal: "openclaw models auth login --provider openai-codex 报错 'Unknown provider'"
+  description: |
+    尝试通过 openclaw 的标准 auth login 命令给 openai-codex 配置认证，
+    报错 Unknown provider，只能看到 copilot-proxy。
+    openai-codex 是内置 provider，不走 plugin auth 流程。
+  env_fingerprint:
+    platform: linux (OpenCloudOS, 6.1.0)
+    node: v22.22.0
+    openclaw: "2026.3.2"
+
+error_process:
+  - step: "安装 Codex CLI 并通过 device auth 登录 ChatGPT"
+    result: "codex auth 成功，~/.codex/auth.json 已写入"
+  - step: "尝试 openclaw models auth login --provider openai-codex"
+    result: "Error: Unknown provider 'openai-codex'. Loaded providers: copilot-proxy"
+  - step: "手动拷贝 token 到 auth-profiles.json"
+    result: "缺少 expires/accountId，导致 PIT-015 的问题"
+
+correct_process:
+  - step: "理解 openai-codex 的认证路径"
+    detail: |
+      openai-codex 是内置 provider，有三条认证路径：
+      1. openclaw onboard --auth-choice openai-codex（推荐，完整 OAuth 流程）
+      2. openclaw onboard --auth-choice codex-cli（读取 Codex CLI 的 auth）
+      3. 手动写 auth-profiles.json（必须补全所有字段，见 PIT-015）
+  - step: "首选方案：用 onboard 命令"
+    detail: |
+      openclaw onboard --auth-choice openai-codex
+      选 Keep 保留现有配置，只更新 auth。
+      会走完整 OAuth flow，自动写入正确格式的 auth profile。
+  - step: "备用方案：手动补全"
+    detail: |
+      如果 onboard 不便使用（headless 服务器），参考 PIT-015 手动补全字段。
+      必须包含: type, provider, refresh, access, expires, accountId, email
+
+root_cause: |
+  OpenClaw 的 `models auth login` 命令只支持 plugin-based providers（如 copilot-proxy）。
+  openai-codex 作为内置 provider，认证走 onboard 流程或手动配置。
+  Codex CLI 的 ~/.codex/auth.json 和 OpenClaw 的 auth-profiles.json 是独立的凭证存储，
+  互不自动同步。
+
+confidence: 0.9
+blast_radius:
+  files: ["~/.openclaw/agents/main/agent/auth-profiles.json"]
+  scope: "openai-codex 认证配置"
+
+related:
+  - PIT-001  # OAuth 自动合并不生效（类似模式）
+  - PIT-015  # 手动拷贝 token 不完整

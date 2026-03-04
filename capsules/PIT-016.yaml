@@ -1,0 +1,64 @@
+id: PIT-016
+trigger_time: "2026-03-04 21:00"
+category: repair
+severity: critical
+
+problem:
+  signal: "Agent 在 Telegram 只回复文字，不执行任何 tool call（不调用 nano-banana、rembg、pipeline 等）"
+  description: |
+    切到 openai-codex/gpt-5.3-codex 后，agent 能正常回复文字（说"在干活"、"我马上跑"），
+    但 session 日志中零个 tool_use，全部是 THINK + TEXT。
+    之前用 google-gemini-cli/gemini-3-pro-preview 时一切正常。
+  env_fingerprint:
+    platform: linux (OpenCloudOS, 6.1.0)
+    node: v22.22.0
+    openclaw: "2026.3.2"
+    model_provider: openai-codex
+    model: gpt-5.3-codex
+
+error_process:
+  - step: "将 default model 设为 openai-codex/gpt-5.3-codex"
+    result: "agent 开始用 codex 模型回复"
+  - step: "用户发消息要求出图"
+    result: "agent 文字回复'收到，马上跑'，但从不执行 tool call"
+  - step: "检查 gateway 日志"
+    result: "无 API 错误，只有 image resize 日志"
+  - step: "检查 session jsonl"
+    result: "所有 assistant 消息只有 THINK + TEXT，零个 tool_use"
+
+correct_process:
+  - step: "确认是 gpt-5.3-codex 的已知 bug"
+    detail: |
+      GitHub Issues:
+      - #28754: gpt-5.3-codex 间歇性只返回文本不执行 tool call
+      - #30923: Responses API 要求 reasoning item 在 function_call 之前，OpenClaw 没发
+      这是上游模型 + API 格式的双重问题。
+  - step: "切换到更稳定的 codex 模型"
+    detail: |
+      openclaw models set openai-codex/gpt-5.2-codex
+      可选: gpt-5.1-codex-max, gpt-5.2-codex, gpt-5.1
+  - step: "添加 fallback 模型"
+    detail: |
+      在 openclaw.json 的 agents.defaults.model 中添加:
+      "fallbacks": ["google-gemini-cli/gemini-3-pro-preview"]
+  - step: "重启 gateway 并开新 session"
+    detail: |
+      systemctl --user restart openclaw-gateway
+      旧 session 可能缓存了 gpt-5.3-codex 的状态，必须开新 session。
+
+root_cause: |
+  gpt-5.3-codex 有两个已知的 tool calling bug：
+  1. Issue #28754: 模型间歇性进入"对话模式"，只生成文本 + end_turn，不调用 tools
+  2. Issue #30923: Responses API 格式要求 reasoning item 在 function_call 之前，
+     但 OpenClaw gateway 没有在请求中加入 reasoning，导致 400 错误被静默处理
+  Gateway 把这两种情况都当作"成功完成"处理，不会触发 retry 或 fallback。
+  解决方案：降级到 gpt-5.2-codex（tool calling 稳定）+ 设 gemini 为 fallback。
+
+confidence: 0.9
+blast_radius:
+  files: ["~/.openclaw/openclaw.json"]
+  scope: "所有 agent 的 tool calling 能力"
+
+related:
+  - PIT-010  # 模型问题误判
+  - PIT-014  # session 缓存问题

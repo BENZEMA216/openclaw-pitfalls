@@ -1,6 +1,6 @@
 ---
 name: openclaw-deploy
-description: "OpenClaw 部署避坑经验库 - 包含 14 条在腾讯云上部署 OpenClaw AI Agent Gateway 的踩坑记录。加载后 Agent 自带所有历史部署经验，遇到已知问题直接走正确路径。激活条件：(1) 新部署 OpenClaw gateway (2) 遇到 OpenClaw 配置/环境/修复问题 (3) 在腾讯云 CVM 上运行 OpenClaw (4) 调试 google-gemini-cli 提供商 (5) 配置 OpenClaw 浏览器功能 (6) 管理 OpenClaw 进程和 skill。关键词：OpenClaw、部署、gateway、腾讯云、gemini、浏览器、headless、systemd、skill、session、踩坑"
+description: "OpenClaw 部署避坑经验库 - 包含 17 条在腾讯云上部署 OpenClaw AI Agent Gateway 的踩坑记录。加载后 Agent 自带所有历史部署经验，遇到已知问题直接走正确路径。激活条件：(1) 新部署 OpenClaw gateway (2) 遇到 OpenClaw 配置/环境/修复问题 (3) 在腾讯云 CVM 上运行 OpenClaw (4) 调试 google-gemini-cli 或 openai-codex 提供商 (5) 配置 OpenClaw 浏览器功能 (6) 管理 OpenClaw 进程和 skill (7) 模型切换和 tool calling 问题。关键词：OpenClaw、部署、gateway、腾讯云、gemini、codex、openai、浏览器、headless、systemd、skill、session、tool-calling、踩坑"
 user-invocable: true
 metadata:
   openclaw:
@@ -16,7 +16,7 @@ metadata:
 
 # OpenClaw 部署避坑经验库
 
-> 14 条从零开始在腾讯云上部署 OpenClaw AI Agent Gateway 的实战踩坑记录。
+> 17 条从零开始在腾讯云上部署 OpenClaw AI Agent Gateway 的实战踩坑记录。
 > 每条记录包含错误信号、错误路径、正确路径和根因分析。
 > 详细 YAML 记录存放在 `capsules/` 目录下。
 
@@ -115,6 +115,23 @@ metadata:
   3. `systemctl --user restart openclaw-gateway`
   4. 发送新消息触发新 session 创建，检查 skillsSnapshot 包含新 skill
 
+#### PIT-015 [CRITICAL] openai-codex auth-profiles 缺 expires/accountId 致 "unknown expires unknown"
+
+- **信号**: `openclaw models status` 显示 openai-codex "unknown expires unknown"
+- **根因**: 手动从 `~/.codex/auth.json` 拷贝 token 时漏掉了 expires 和 accountId
+- **正确做法**:
+  1. 从 JWT `exp` claim 算出 expires（秒→毫秒）
+  2. 从 JWT payload 提取 `chatgpt_account_id`
+  3. 补全到 auth-profiles.json，或用 `openclaw onboard --auth-choice openai-codex`
+
+#### PIT-017 [HIGH] openclaw models auth login 不支持 openai-codex
+
+- **信号**: `Error: Unknown provider "openai-codex". Loaded providers: copilot-proxy`
+- **根因**: openai-codex 是内置 provider，不走 plugin auth 流程
+- **正确做法**:
+  用 `openclaw onboard --auth-choice openai-codex`（选 Keep 保留现有配置），
+  或手动写完整的 auth-profiles.json（见 PIT-015）
+
 ---
 
 ### ENV 类 -- 环境问题
@@ -192,6 +209,16 @@ metadata:
 ---
 
 ### REPAIR 类 -- 修复与诊断
+
+#### PIT-016 [CRITICAL] gpt-5.3-codex 只回文字不执行 tool call
+
+- **信号**: Agent 文字回复"收到，马上跑"但 session 日志零个 tool_use
+- **根因**: gpt-5.3-codex 有已知 bug (#28754 + #30923)，间歇性进入纯文本模式
+- **正确做法**:
+  1. `openclaw models set openai-codex/gpt-5.2-codex`（降级到稳定版本）
+  2. 在 `openclaw.json` 加 fallback: `"fallbacks": ["google-gemini-cli/gemini-3-pro-preview"]`
+  3. 重启 gateway 并开新 session（旧 session 可能缓存了问题状态）
+
 
 #### PIT-010 [HIGH] 模型超时误判为 API 故障
 
@@ -398,5 +425,8 @@ blast_radius:
 | PIT-012 | `capsules/PIT-012.yaml` | critical | env | store-teardown 技能执行超时 |
 | PIT-013 | `capsules/PIT-013.yaml` | high | env | curl 下载 alicdn 图片返回 1x1 GIF |
 | PIT-014 | `capsules/PIT-014.yaml` | critical | config | Agent 不知道新安装的 skill |
+| PIT-015 | `capsules/PIT-015.yaml` | critical | config | openai-codex auth 缺 expires/accountId |
+| PIT-016 | `capsules/PIT-016.yaml` | critical | repair | gpt-5.3-codex 只回文字不执行 tool call |
+| PIT-017 | `capsules/PIT-017.yaml` | high | config | models auth login 不支持 openai-codex |
 
 需要查看某条记录的完整错误路径和详细根因分析时，读取对应的 YAML 文件。

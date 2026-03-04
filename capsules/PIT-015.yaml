@@ -1,0 +1,64 @@
+id: PIT-015
+trigger_time: "2026-03-04 20:30"
+category: config
+severity: critical
+
+problem:
+  signal: "openai-codex auth shows 'unknown expires unknown' in openclaw models status"
+  description: |
+    手动从 ~/.codex/auth.json 拷贝 access_token 到 auth-profiles.json 后，
+    OpenClaw 的 models auth status 显示 "unknown expires unknown"，
+    导致 token 刷新机制失效。
+  env_fingerprint:
+    platform: linux (OpenCloudOS, 6.1.0)
+    node: v22.22.0
+    openclaw: "2026.3.2"
+    model_provider: openai-codex (ChatGPT Pro OAuth)
+    model: gpt-5.3-codex
+
+error_process:
+  - step: "从 ~/.codex/auth.json 复制 access_token 和 refresh_token 到 auth-profiles.json"
+    result: "profile 创建成功，但缺少 expires 和 accountId 字段"
+  - step: "openclaw models auth status 显示 'unknown expires unknown'"
+    result: "OpenClaw 无法判断 token 是否过期，自动刷新机制失效"
+  - step: "尝试 openclaw models auth login --provider openai-codex"
+    result: "Error: Unknown provider 'openai-codex'. openai-codex 是内置 provider，不是 plugin"
+
+correct_process:
+  - step: "从 JWT access_token 中解码 exp claim（秒级时间戳）"
+    detail: |
+      JWT payload 中的 exp 字段是 Unix 秒级时间戳。
+      转为毫秒: expires = exp * 1000
+  - step: "从 JWT payload 中提取 accountId"
+    detail: |
+      路径: https://api.openai.com/auth → chatgpt_account_id
+      示例: bb482362-b0d8-4431-b880-5fc9cb1bf512
+  - step: "补全 auth-profiles.json 中的 openai-codex:default 条目"
+    detail: |
+      必须包含: type, provider, refresh, access, expires, accountId, email
+      ```json
+      {
+        "type": "oauth",
+        "provider": "openai-codex",
+        "refresh": "<refresh_token>",
+        "access": "<access_token>",
+        "expires": 1773489115000,
+        "accountId": "bb482362-...",
+        "email": "user@example.com"
+      }
+      ```
+  - step: "验证: openclaw models status --probe"
+    detail: "应显示 'ok expires in Xd'，不再是 'unknown'"
+
+root_cause: |
+  OpenClaw 的 auth-profiles.json 需要完整的 OAuth profile 结构：
+  { access, refresh, expires, accountId }。
+  手动拷贝 token 时漏掉了 expires（从 JWT exp 算）和 accountId（从 JWT payload 提取），
+  导致 OpenClaw 的自动刷新和状态显示机制失效。
+  注意：openclaw models auth login 不支持 openai-codex（它是内置 provider），
+  正规做法是 openclaw onboard --auth-choice openai-codex 或手动补全字段。
+
+confidence: 0.95
+blast_radius:
+  files: ["~/.openclaw/agents/main/agent/auth-profiles.json"]
+  scope: "模型认证，影响所有 openai-codex 模型调用"
