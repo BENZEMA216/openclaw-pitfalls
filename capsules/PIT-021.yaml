@@ -1,0 +1,43 @@
+id: PIT-021
+title: "⚠️ Message failed — Local media path not under allowed directory"
+date: 2026-03-05
+tags: [message-tool, media, symlink, allowed-paths, design-assets]
+severity: high
+
+trigger:
+  - Bot calls message(action="send", path="/root/.openclaw/media/design-assets/...")
+  - Telegram shows "⚠️ ✉️ Message failed"
+  - Gateway logs: "[tools] message failed: Local media path is not under an allowed directory: ..."
+
+root_cause: |
+  OpenClaw's assertLocalMediaAllowed() (in dist/ir-B6xHv9oi.js) calls fs.realpath() to
+  resolve symlinks before checking allowed roots. The allowed roots are:
+    - preferredTmpDir
+    - /root/.openclaw/media/
+    - /root/.openclaw/agents/
+    - /root/.openclaw/workspace/
+    - /root/.openclaw/sandboxes/
+
+  Previously: /root/.openclaw/media/design-assets → symlink → /root/.openclaw/design-assets/
+  After realpath: /root/.openclaw/design-assets/... → NOT under any allowed root → ERROR
+
+fix_applied:
+  - Moved physical files: mv /root/.openclaw/design-assets → /root/.openclaw/media/design-assets
+  - Created reverse symlink: ln -s /root/.openclaw/media/design-assets /root/.openclaw/design-assets
+  - Now realpath(/root/.openclaw/media/design-assets/...) = /root/.openclaw/media/design-assets/...
+  - Starts with /root/.openclaw/media/ → PASSES
+
+working_paths:
+  - /root/.openclaw/media/nano_banana2_output/<file>  ← generated images, always worked
+  - /root/.openclaw/media/design-assets/seek-within/photos-inbound/<file>  ← now works
+  - /root/.openclaw/media/design-assets/1747/images/<file>  ← now works
+  - /root/.openclaw/media/tmp/<file>  ← workaround bot discovered, still works
+
+broken_paths:
+  - Any symlink that resolves OUTSIDE /root/.openclaw/media/ (or other allowed roots)
+  - DO NOT create symlinks in media/ that point outside /root/.openclaw/
+
+notes:
+  - Error source: /root/.nvm/versions/node/v22.22.0/lib/node_modules/openclaw/dist/ (NOT extensions/qqbot)
+  - The qqbot extension has its own clawdbot copy without this restriction — misleading when grepping
+  - Always grep the actual gateway binary at /root/.nvm/.../openclaw/dist/ for runtime behavior
