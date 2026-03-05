@@ -8,22 +8,21 @@ Last updated: 2026-03-05
 
 ## 近期已解决问题
 
-### PIT-020: Bot 拒绝发图（SOUL.md 规则幻觉）
-- 修复：SOUL.md 加明确例外；AGENTS.md 加 message 工具调用示范
+### PIT-020~021: 发图相关修复（已完成）
 
-### PIT-021: ⚠️ Message failed — design-assets 路径被拦截
-- 修复：反转软链接方向，design-assets 物理在 media/ 下
+### 自检漏洞：姿势/场景不验证（已修复）
 
-### 自检漏洞：姿势/场景不验证
-- 修复：AGENTS.md 自检清单新增「姿势/场景是否与 prompt 一致」
+### 长 session 双模型 timeout（已修复）
+- contextPruning（ttl=15m, softTrimRatio=0.15）+ contextTokens=60000 + timeoutSeconds=1800
 
-### 长 session 双模型 timeout — 已修复
-- 修复：contextPruning（ttl=15m, softTrimRatio=0.15）+ contextTokens=60000 + timeoutSeconds=1800
+### imageModel 429 容量限流（已修复）
+- imageModel 加 fallbacks：gemini-3-flash-preview → google/gemini-2.5-flash
 
-### imageModel 429 容量限流 — 已修复
-- 根因：`google-gemini-cli/gemini-3-pro-preview` 走 Google Cloud Code Assist 免费后端，高峰期服务端容量不足返回 429
-- 修复：imageModel 加 fallbacks：gemini-3-flash-preview → google/gemini-2.5-flash
-- 已热更新生效
+### browser tool token mismatch（已修复）
+- 现象：`browser failed: gateway closed (1008): unauthorized: gateway token mismatch`
+- 根因：gateway restart 后旧 agent-browser 进程（pid 230491）未被 systemd 干净杀掉，用旧 token 占着 browser server，新 gateway 连不上
+- 修复：手动 kill 旧进程 + 完整重启 gateway（23:00）
+- 规律：每次 gateway restart 后如果看到 "Found left-over process" 日志，需确认 browser tool 是否正常
 
 ## 当前配置摘要
 
