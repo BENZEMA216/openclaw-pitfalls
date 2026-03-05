@@ -18,15 +18,17 @@ Last updated: 2026-03-05
 - 修复：AGENTS.md 自检清单新增「姿势/场景是否与 prompt 一致」
 
 ### 长 session 双模型 timeout — 已修复
-- 根因：contextPruning 触发门槛对大 context window 永远不触发；推理时间超硬限制
-- 修复1：openclaw.json 新增 contextPruning（ttl=15m, softTrimRatio=0.15, hardClearRatio=0.3, minPrunableToolChars=3000, keepLastAssistants=5）+ contextTokens=60000
-- 修复2：timeoutSeconds=1800（30分钟，原为默认10分钟）
-- 均已热更新生效
+- 修复：contextPruning（ttl=15m, softTrimRatio=0.15）+ contextTokens=60000 + timeoutSeconds=1800
+
+### imageModel 429 容量限流 — 已修复
+- 根因：`google-gemini-cli/gemini-3-pro-preview` 走 Google Cloud Code Assist 免费后端，高峰期服务端容量不足返回 429
+- 修复：imageModel 加 fallbacks：gemini-3-flash-preview → google/gemini-2.5-flash
+- 已热更新生效
 
 ## 当前配置摘要
 
 - 主模型：`openai-codex/gpt-5.2-codex`
-- timeoutSeconds: 1800（30分钟）
-- contextTokens: 60000，pruning 每 15 分钟检查一次
+- imageModel：`gemini-3-pro-preview`（fallbacks: gemini-3-flash-preview, gemini-2.5-flash）
+- timeoutSeconds: 1800，contextTokens: 60000，pruning ttl=15m
 - design-assets：`/root/.openclaw/media/design-assets/`（物理路径）
 - 生图输出：`/root/.openclaw/media/nano_banana2_output/`
