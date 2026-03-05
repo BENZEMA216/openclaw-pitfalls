@@ -19,17 +19,21 @@ Last updated: 2026-03-05
 ## 已调查但不修复的问题
 
 ### Codex server_error 不触发 fallback
-- 现象：`{"type":"server_error"}` 导致 agent run 失败，无自动重试/切换
-- 调查结论：
-  - 全量日志中只出现 1 次（Mar 05 17:14:51）— 偶发抖动，非系统性问题
-  - `shouldFallbackOnError()` 只处理 embedding 错误，不匹配 server_error
-  - `retryOn: ["server_error"]` 仅在 cron schema 存在，interactive agent 无此机制
-  - `fallbacks` 数组在 AgentModelSchema 里存在，但 runtime 层没有 API 错误触发的切换逻辑
-- 结论：无需修复。偶发时用户重发消息即可；Gemini 不作为基模。
+- 全量日志中只出现 1 次 — 偶发抖动，无需修复
+- Interactive agent 消息无 server_error retry 机制（只有 cron 有）
+
+## 已知行为问题（未修复）
+
+### Bot 长 session 后截断任务（只做3张就 NO_REPLY）
+- 现象：用户要求每个产品出5张场景图，bot 只做了3张第一个产品就停
+- 根因：session 文件过长（445KB，从下午14:00跑到17:43），context 过长时 Codex 偷懒，做最小可交付批次就退出
+- 触发条件：session 持续数小时、context 极长的多产品批量任务
+- 临时解法：新开 session 重新触发（@bot 继续做完所有产品）
+- 长期方案：考虑设置 `contextPruning` 或 `compaction` 配置，或让 bot 做完批次后用 cron/subagent 继续
 
 ## 当前配置摘要
 
 - 主模型：`openai-codex/gpt-5.2-codex`
-- 配置 fallback：`google-gemini-cli/gemini-3-pro-preview`（仅 embedding fallback 有效）
 - design-assets 路径：`/root/.openclaw/media/design-assets/`（物理路径，软链接在 `/root/.openclaw/design-assets/`）
 - 生图输出：`/root/.openclaw/media/nano_banana2_output/`
+- creo.md：`/root/.openclaw/memory/creo.md`（存在，Preflight 正常）
