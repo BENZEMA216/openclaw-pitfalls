@@ -1,0 +1,34 @@
+id: PIT-019
+title: "nano_banana2 三个 bug（2026-03-05）"
+date: "2026-03-05"
+category: tool-bug
+severity: high
+tags: [nano_banana2, img2img, path, aesthetic]
+
+trigger:
+  - "Agent 出图不保真，每次都改变衣服款式"
+  - "Agent 生图成功但发不出去（path error）"
+  - "Agent 做 Preflight 但读不到 aesthetic 文件"
+
+error_process:
+  - "nano_banana2.py 只传 text 到 API，没有 --image 参数，无法做图生图"
+  - "默认输出路径是 /tmp/nano_banana2_output/，不在 media/ 允许目录内，发图失败"
+  - "AGENTS.md 里 Every Session 用相对路径 memory/aesthetic.md"
+  - "Agent CWD 是 workspace/，解析到 workspace/memory/aesthetic.md"
+  - "而 aesthetic.md 实际在 /root/.openclaw/memory/，路径不匹配 → 读取失败"
+
+correct_process:
+  - "nano_banana2.py 增加 --image 参数，call_gemini 函数支持 inlineData 图片输入"
+  - "默认输出路径改为 /root/.openclaw/media/nano_banana2_output/"
+  - "在 workspace/memory/ 创建 symlink → /root/.openclaw/memory/aesthetic*.md"
+  - "AGENTS.md 增加 nano_banana2 img2img 使用文档"
+
+root_cause:
+  - "img2img: 实现缺失，非 API 限制。Gemini 支持 multimodal input，只是脚本没传图"
+  - "path: 两个 memory 目录裂开（workspace/memory/ vs /root/.openclaw/memory/）"
+  - "rename 操作只改了文件名，没有同步更新 symlink"
+
+outcome:
+  - "nano_banana2 --image 参数可用，测试通过（服装款式保真度明显提升）"
+  - "Preflight 现在能正确读到 aesthetic 文件"
+  - "生图输出直接到 media/ 可发送"
