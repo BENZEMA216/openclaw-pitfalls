@@ -17,21 +17,25 @@ Last updated: 2026-03-05
 ### 自检漏洞：姿势/场景不验证
 - 修复：AGENTS.md 自检清单新增「姿势/场景是否与 prompt 一致」
 
-## 已知行为问题
-
-### 长 session 导致两个模型全部 timeout（严重）
-- 现象：`All models failed (2): openai-codex: LLM request timed out | gemini: LLM request timed out`
-- 根因：session bb331759 从 14:45 跑到 20:15，context 达 727KB，LLM 推理时间超过 10 分钟硬限制
-- 日志特征：`embedded run timeout: timeoutMs=600000` + `durationMs=630166`
-- 临时解法：`/reset` 或 `/new` 开新 session
-- 长期方案：配置 `compaction` 或 `contextPruning`，防止单 session 无限增长
-
-### Bot 长 session 后截断任务（只做3张就 NO_REPLY）
-- 根因：session 上下文过长，Codex 做最小批次就退出（timeout 的前驱症状）
+### 长 session 双模型 timeout — 已修复
+- 根因：contextPruning 默认触发门槛（30% context ratio）对 Codex 大 context window 永远不触发；compaction safeguard 同理；推理时间超 10 分钟
+- 修复：openclaw.json 新增配置：
+  ```json
+  "contextPruning": {
+    "mode": "cache-ttl",
+    "ttl": "15m",
+    "softTrimRatio": 0.15,
+    "hardClearRatio": 0.3,
+    "minPrunableToolChars": 3000,
+    "keepLastAssistants": 5
+  },
+  "contextTokens": 60000
+  ```
+- 已热更新（无需重启），下次对话起效
 
 ## 当前配置摘要
 
 - 主模型：`openai-codex/gpt-5.2-codex`
+- contextTokens: 60000（有效预算），pruning 每 15 分钟触发
 - design-assets：`/root/.openclaw/media/design-assets/`（物理），`/root/.openclaw/design-assets/` 为软链接
 - 生图输出：`/root/.openclaw/media/nano_banana2_output/`
-- creo.md：`/root/.openclaw/memory/creo.md`（存在）
