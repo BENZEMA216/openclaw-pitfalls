@@ -18,24 +18,15 @@ Last updated: 2026-03-05
 - 修复：AGENTS.md 自检清单新增「姿势/场景是否与 prompt 一致」
 
 ### 长 session 双模型 timeout — 已修复
-- 根因：contextPruning 默认触发门槛（30% context ratio）对 Codex 大 context window 永远不触发；compaction safeguard 同理；推理时间超 10 分钟
-- 修复：openclaw.json 新增配置：
-  ```json
-  "contextPruning": {
-    "mode": "cache-ttl",
-    "ttl": "15m",
-    "softTrimRatio": 0.15,
-    "hardClearRatio": 0.3,
-    "minPrunableToolChars": 3000,
-    "keepLastAssistants": 5
-  },
-  "contextTokens": 60000
-  ```
-- 已热更新（无需重启），下次对话起效
+- 根因：contextPruning 触发门槛对大 context window 永远不触发；推理时间超硬限制
+- 修复1：openclaw.json 新增 contextPruning（ttl=15m, softTrimRatio=0.15, hardClearRatio=0.3, minPrunableToolChars=3000, keepLastAssistants=5）+ contextTokens=60000
+- 修复2：timeoutSeconds=1800（30分钟，原为默认10分钟）
+- 均已热更新生效
 
 ## 当前配置摘要
 
 - 主模型：`openai-codex/gpt-5.2-codex`
-- contextTokens: 60000（有效预算），pruning 每 15 分钟触发
-- design-assets：`/root/.openclaw/media/design-assets/`（物理），`/root/.openclaw/design-assets/` 为软链接
+- timeoutSeconds: 1800（30分钟）
+- contextTokens: 60000，pruning 每 15 分钟检查一次
+- design-assets：`/root/.openclaw/media/design-assets/`（物理路径）
 - 生图输出：`/root/.openclaw/media/nano_banana2_output/`
