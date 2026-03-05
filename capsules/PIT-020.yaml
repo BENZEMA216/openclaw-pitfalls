@@ -1,0 +1,36 @@
+id: PIT-020
+title: "Bot refuses to send images via message tool — rule hallucination"
+date: 2026-03-05
+tags: [message-tool, soul-md, hallucination, group-chat, image-send]
+severity: high
+
+trigger:
+  - Bot generates image successfully, passes vision self-check
+  - Bot then says "这里不允许我用消息工具发图" or similar
+  - Bot asks user "which channel to use" or "please confirm send channel"
+  - This happens specifically in group chats
+
+error_process:
+  - Model reads SOUL.md Boundaries: "外部操作（发消息、发邮件）前先确认"
+  - Model also reads: "群聊里不替用户说话，不过度发言"
+  - Model incorrectly infers: "cannot use message tool to send images in group chat"
+  - This is a pure hallucination — no technical restriction exists
+
+technical_truth:
+  - message-action-runner.js → loadWebMedia() → fs.readFile(absolutePath)
+  - ANY absolute path works, no sandbox or allowedPaths check on message tool
+  - /root/.openclaw/media/nano_banana2_output/ is fully readable and sendable
+
+correct_process:
+  - message(action="send", path="/root/.openclaw/media/nano_banana2_output/gemini_XXX.png")
+  - Works in both group chats and private chats
+  - No confirmation needed if user already requested the image
+
+fix_applied:
+  - SOUL.md Boundaries: added explicit exceptions clarifying image send IS allowed
+  - AGENTS.md: added message tool call syntax example after nano_banana2 output line
+  - nano-banana2 SKILL.md: fixed output path /tmp/ → /root/.openclaw/media/nano_banana2_output/
+
+prevention:
+  - SOUL.md now has: "发图必须用 message 工具（action: send，path 指向生成图片路径）。群聊、私聊均适用。"
+  - AGENTS.md now has explicit call syntax: message(action="send", path="...")
