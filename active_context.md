@@ -5,28 +5,27 @@ Last updated: 2026-03-06
 ## 当前运行状态
 
 正常运行，v2026.3.2，last restart 2026-03-05 23:00。
-**主模型: openai-codex/gpt-5.4**（全局配置 + sessions.json 覆盖已清除）
+**主模型: openai-codex/gpt-5.3-codex**（当前 Codex OAuth 渠道最新可用版本）
 
 ## 模型 ID 规律（已验证）
 
 | 模型 | Provider ID | 状态 |
 |------|-------------|------|
 | GPT-5.2-Codex | openai-codex/gpt-5.2-codex | 可用 |
-| GPT-5.3-Codex | openai-codex/gpt-5.3-codex | 可用 |
-| GPT-5.4 | openai-codex/gpt-5.4 | 可用 ✅ 当前 |
+| GPT-5.3-Codex | openai-codex/gpt-5.3-codex | 可用 ✅ 当前 |
+| GPT-5.4 | openai-codex/gpt-5.4 | ❌ Codex OAuth 尚未开放 |
 | GPT-5.4-Codex | openai-codex/gpt-5.4-codex | ❌ 不存在 |
 
-**规律**：GPT-5.4 起不再有 `-codex` 后缀，直接用 `gpt-5.4`。
+**关键结论**：
+- GPT-5.4 只在 OpenAI 直接 API（API Key）可用
+- Codex CLI OAuth 渠道（benzemazdz99@gmail.com）目前只暴露 5.2 和 5.3
+- `/model` 列表是从后端动态发现的，不是 openclaw.json 写的
 
 ## ⚠️ 已知坑：session model 覆盖
 
 `sessions.json` 里每个 session 有独立 `model` 字段，优先级高于全局配置。
-用 `/model xxx` 命令设置的模型会持久化到这里，`/reset` 不会清它。
-
-**症状**：全局改了模型，新 session 还是显示旧模型。
+用 `/model xxx` 命令设置的模型会持久化，`/reset` 不会清它。
 **修复**：手动把 sessions.json 里对应 session 的 `model` 字段设为 null。
-
-已清除：`agent:main:telegram:group:-1003314716158` 的 `model: gpt-5.2-codex` 覆盖。
 
 ## 待处理问题
 
