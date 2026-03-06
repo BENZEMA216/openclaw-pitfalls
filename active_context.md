@@ -5,13 +5,18 @@ Last updated: 2026-03-06
 ## 当前运行状态
 
 正常运行，v2026.3.2，last restart 2026-03-05 23:00。
-**主模型: openai-codex/gpt-5.3-codex**（刚切换，2026-03-06）
+**主模型: openai-codex/gpt-5.4**（2026-03-06 切换，hot reload 成功）
 
-## 模型切换记录
+## 模型 ID 规律（已验证）
 
-- `gpt-5.4-codex` → Unknown model，不存在
-- `gpt-5.3-codex` → 可用，hot reload 成功，无报错
-- 用户确认是否保持 5.3 或回滚 5.2（待回复）
+| 模型 | Provider ID | 状态 |
+|------|-------------|------|
+| GPT-5.2-Codex | openai-codex/gpt-5.2-codex | 可用 |
+| GPT-5.3-Codex | openai-codex/gpt-5.3-codex | 可用 |
+| GPT-5.4 | openai-codex/gpt-5.4 | 可用 ✅ 当前 |
+| GPT-5.4-Codex | openai-codex/gpt-5.4-codex | ❌ 不存在 |
+
+**规律**：GPT-5.4 起不再有 `-codex` 后缀，直接用 `gpt-5.4`。
 
 ## 待处理问题
 
@@ -19,8 +24,7 @@ Last updated: 2026-03-06
 - 1747 wellbeing 场景图（3张）写在 HEARTBEAT.md，bot 每次心跳都报告
 - 需要：清掉该条目，或明确是否继续任务
 
-### ⚠️ bb331759 群聊 session 膨胀
-- 文件大小：~3MB（群聊 BENZEMA & 飞天螺旋桨）
+### ⚠️ bb331759 群聊 session 膨胀 (~3MB)
 - 建议：群里发 `/reset` 开新 session
 
 ## 已修复（2026-03-05）
@@ -29,7 +33,3 @@ Last updated: 2026-03-06
 - timeoutSeconds: 1800
 - imageModel fallbacks: gemini-3-flash-preview + gemini-2.5-flash
 - AGENTS.md: 姿势自检 + Logo 4路径协议
-
-## Creo Fragments
-
-F-001 ～ F-010，最新5条（F-006~F-010）写于 2026-03-05，均为 negative 类型
