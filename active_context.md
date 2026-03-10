@@ -7,20 +7,18 @@ Last updated: 2026-03-11
 运行中，v2026.3.2（**有新版 v2026.3.8 待更新，含 gpt-5.4 支持**）。
 主模型: openai-codex/gpt-5.3-codex
 
-## ⚡ 下一步：OpenClaw Debugger Console
+## ✅ OpenClaw Debugger Console（已上线）
 
-用户需求：精细化调试，不想每次 ssh 进去跑 python 脚本。
+- **路径**：/root/.openclaw/debugger/（main.py + index.html）
+- **服务**：systemd user service `openclaw-debugger`，端口 8899，开机自启
+- **访问**：`ssh -L 8899:localhost:8899 root@43.160.242.46 -N` → http://localhost:8899
+- **功能**：Sessions 时间线 / Memory 预览 / Assets Gallery / Logs 实时流 / Config 高亮
 
-### 规划方案
-- **技术栈**：Python + FastAPI + 纯 HTML，跑在服务器 localhost:8899
-- **访问方式**：SSH tunnel `ssh -L 8899:localhost:8899 root@43.160.242.46`
-- **核心功能**：
-  1. Session 时间线 — 消息 + tool call 名称/输入/输出完整链路
-  2. Live 日志 — 流式 journalctl，支持关键词过滤
-  3. Session 列表 — channel 与 session 绑定关系、文件大小、最后活跃
-  4. 内存快照 — AGENTS.md / openclaw.json / aesthetic fragments 渲染
-
-**状态**：用户确认需求，待开始实现。
+```bash
+# 管理
+systemctl --user status openclaw-debugger
+systemctl --user restart openclaw-debugger
+```
 
 ## ⚡ 待执行：更新 OpenClaw
 
@@ -39,4 +37,3 @@ v2026.3.8 含 gpt-5.4 支持。
 
 - GPT-5.3-Codex: openai-codex/gpt-5.3-codex ✅ 当前
 - GPT-5.4: openai-codex/gpt-5.4 ⏳ 需更新至 v2026.3.8
-- GPT-5.4-Codex: ❌ 不存在
