@@ -2,58 +2,33 @@
 
 Last updated: 2026-03-12
 
-## 当前优先级
+## 最近完成
 
-Code 标签页重新设计：从过度工程化的 bridge 方案，改为 Browser File API + 服务器 deploy endpoint。
+Code tab 重构完成：从 bridge 方案改为 Browser File API + 服务器端 deploy：
 
-## 下一步要做
+- **删除**：bridge/chat panel CSS+HTML+JS（~350行，需要本地跑 python3 claude-bridge.py）
+- **新增**：`LOCAL FILES` 右侧面板（280px），两个文件行各有 `Open…` 按钮（Browser File API）
+- **新增**：纯 JS LCS diff 引擎（patience sort），浏览器端实时计算 unified diff
+- **新增** main.py 两个 endpoint：
+  - `GET /api/file/current?name=` — 返回服务器文件内容（用于 diff 基线）
+  - `POST /api/deploy` — 接收 `{name, content}`，写入服务器；main.py 变更时自动重启 uvicorn
+- `deployChanges()` 直接调 `/api/deploy`，零本地依赖
 
-### Code Tab：Diff Viewer + Deploy（待实现）
+## 使用方式
 
-**用户真实需求**：Claude Code 改了本地文件后，在 Debugger UI 里 review diff，确认无误再部署。
+1. Claude Code 改完本地文件
+2. Debugger → Code tab → Open… 选本地文件
+3. 左侧看 diff（红删绿增）
+4. 确认后 Deploy to Server
 
-**正确方案（无任何本地依赖）：**
-1. 浏览器 File API 读取用户选择的本地文件（原生，无需 bridge）
-2. 从服务器 `/api/file/current?name=index.html` 拉当前部署版本
-3. 浏览器内做 diff，左右或 unified 展示
-4. 点 Deploy → POST 文件内容到 `/api/deploy` → 服务器写入 + 重启 uvicorn
+## 历史 Bug 修复（迭代10-12）
 
-**需要新增的后端 endpoint：**
-- `GET /api/file/current?name=index.html|main.py` → 返回当前部署文件内容
-- `POST /api/deploy` → multipart 接收文件，写入 /root/.openclaw/debugger/，可选重启
+- iter 10: `#graph-detail-body` white-space pre-wrap 双空行 bug + openGraphDetail res.ok check
+- iter 11: `.tool-header-err` CSS 缺失 + loadGraph try/catch
+- iter 12: 分页重复 bug（offset=0 作双义），改为 `offset: int = None`
 
-**前端改动：**
-- Code tab 改为：文件选择器 + diff viewer + Deploy 按钮
-- 删除旧的 bridge 相关代码（chat panel、SSE streaming、bridge 连接等）
-- 保留已写好的 diff CSS 样式
+## 服务器状态
 
-**用户流程：**
-1. Claude Code 改完文件（终端正常用）
-2. Debugger → Code tab
-3. 点"打开文件" → 选 /tmp/debugger_index.html
-4. 看 diff
-5. 点 Deploy
-
-**废弃：** /tmp/claude-bridge.py（过度设计，不符合产品易用性原则）
-
-## Debugger Bug 修复总览 (Iter 5-12，已完成)
-
-| Iter | 修复 |
-|------|------|
-| 6 | **SCP 部署 bug**（目标必须指定文件名） |
-| 7 | path traversal 安全漏洞 |
-| 9 | renderMd + white-space:pre-wrap 双倍行距 |
-| 12 | **分页重复消息 bug**（offset=None Optional） |
-
-## 部署规范
-
-```bash
-sshpass -p 'Xz19990817.' scp -o StrictHostKeyChecking=no \
-  /tmp/debugger_index.html root@43.160.242.46:/root/.openclaw/debugger/index.html
-```
-
-## 服务器信息
-
-- Server: 43.160.242.46:/root/.openclaw/debugger/
-- Token: x_w-NfYtLw57mkbsipyifd9WIoGUR8vP
-- Port: 8899, nginx proxy at /debugger/
+- uvicorn 运行在 127.0.0.1:8899
+- 文件路径：/root/.openclaw/debugger/
+- index.html + main.py 均已部署
