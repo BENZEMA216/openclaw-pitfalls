@@ -1,53 +1,65 @@
 # OpenClaw Active Context
 
-Last updated: 2026-03-11
+Last updated: 2026-03-12
 
 ## 当前优先级
 
-Debugger 代码走查持续进行中，10 轮迭代完成，累计修复 ~18 个 bug。
+Debugger 代码走查完成（12 轮迭代，~20 个 bug 修复）。新增 Claude Code 集成面板。
 
 ## 最近的关键决策
 
-### Debugger 走查进展 (10 轮迭代，2026-03-11)
+### Claude Code Bridge 功能 (2026-03-12)
 
-**Iter 5 修复：**
-- `#panel-graph { display: flex }` CSS specificity bug → Graph 面板始终可见 → 移除 display:flex
-- Assets 侧边栏 refresh 按钮
-- `switchTab` 切换时重置 nav-status
-- `extractImgPaths` 改为递归 walk 处理嵌套对象
+在 Debugger 新增 **Code 标签页**，实现本地 Claude Code 与服务器调试工具的联动。
 
-**Iter 6 修复：**
-- `loadMoreMsgs` insertBefore 位置错误 → 旧消息插入到 trace panel 之前 → 改用 `querySelector('.msg')` 作为锚点
-- `refreshAssets` 不绕过后端缓存 → 加 `?_=timestamp` + 后端 `list_assets(request: Request)` 支持 force-bypass
-- 移除 `renderTracePanel` 中死代码 `maxCount`
-- **发现部署 bug**: scp 多文件到目录时保留 basename，`/tmp/debugger_index.html` → `debugger_index.html`（不是 `index.html`）→ 此前所有部署都打到了错误文件名
+**架构：**
+```
+Browser (debugger at 43.160.242.46)
+  ↕ fetch (CORS)
+Local bridge (localhost:9988) → /tmp/claude-bridge.py
+  ↕ subprocess
+claude CLI (本地 Claude Code)
+  ↓ 读写 /tmp/debugger_*.* 
+Bridge → scp → 服务器部署
+```
 
-**Iter 7 修复：**
-- `jumpToMemory` 缺少 `res.ok` 检查 → 404 时静默失败
-- `loadSession` 无 try/catch → 网络错误时 "Loading…" 永不消失
-- `toolResult` 消息无 tool-cat 类 → 无语义左边框颜色
-- 后端 `get_session` / `get_session_trace` 路径穿越漏洞 → session_id 未校验 → 加 `^[\w.-]+$` 正则 + resolved path 前缀检查
+**文件：**
+- `/tmp/claude-bridge.py` — 本地 HTTP bridge，端口 9988
+- Debugger `index.html` — 新增 Code 标签页
 
-**Iter 8 修复：**
-- `loadSessions`、`loadMemory`、`loadAssets` 全无 try/catch + res.ok 检查 → 静默失败 → 统一加错误展示
-- `copyMsg` 无 `.catch()` → 剪贴板拒绝时静默失败
+**使用：**
+```bash
+python3 /tmp/claude-bridge.py  # 本地终端运行
+# 打开 Debugger → Code tab → Connect
+```
 
-**Iter 9 修复：**
-- `renderMd` + `white-space: pre-wrap` 双倍行距 bug → HTML 块元素间的 `
-` 在 pre-wrap 容器中渲染为空行 → 改为 plain text 包 `<div>`、`join('')`、移除 `.mem-side-body` 和 `.mem-content-area` 的 `pre-wrap`
-- `loadMoreMsgs` 无 error handling
+**功能：**
+- 右侧 Chat 面板：对话 Claude Code，它知道 debugger 架构（system prompt 注入了 context）
+- 左侧 Diff 面板：Claude 修改文件后实时展示 unified diff（红删绿增）
+- Deploy 按钮：一键 scp 所有改动文件到服务器，main.py 变化时自动重启 uvicorn
+- Bridge /ping 确认 claude CLI 可用
 
-**Iter 10 修复：**
-- `#graph-detail-body` 也用 `renderMd()` 但仍有 `white-space: pre-wrap` → 移除
-- `openGraphDetail` 无 `res.ok` 检查 → 404/403 时静默显示空内容 → 加检查+错误展示
+### Debugger Bug 修复总览 (Iter 5-12)
+
+| Iter | 修复 |
+|------|------|
+| 5 | CSS specificity bug（graph 面板永远可见）、extractImgPaths 递归 |
+| 6 | loadMoreMsgs 插入位置、refreshAssets cache bypass、**SCP 部署 bug** |
+| 7 | path traversal 安全漏洞、res.ok 检查、loadSession try/catch |
+| 8 | loadSessions/Memory/Assets 全无错误处理，copyMsg catch |
+| 9 | renderMd + white-space:pre-wrap 双倍行距 |
+| 10 | graph-detail-body pre-wrap bug、openGraphDetail res.ok |
+| 11 | .tool-header-err CSS 未定义、loadGraph try/catch |
+| 12 | **分页重复消息 bug**：backend offset=None 改为 Optional，前端 fetchLimit 精确计算 |
 
 ## 部署规范（重要）
 
-SCP 必须指定目标文件名，不能用目录作为目标：
 ```bash
-# 正确:
-sshpass ... scp /tmp/debugger_index.html root@43.160.242.46:/root/.openclaw/debugger/index.html
-sshpass ... scp /tmp/debugger_main.py root@43.160.242.46:/root/.openclaw/debugger/main.py
+# SCP 必须指定目标文件名：
+sshpass -p 'Xz19990817.' scp -o StrictHostKeyChecking=no \
+  /tmp/debugger_index.html root@43.160.242.46:/root/.openclaw/debugger/index.html
+sshpass -p 'Xz19990817.' scp -o StrictHostKeyChecking=no \
+  /tmp/debugger_main.py root@43.160.242.46:/root/.openclaw/debugger/main.py
 ```
 
 ## 服务器信息
