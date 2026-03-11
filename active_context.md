@@ -2,38 +2,46 @@
 
 Last updated: 2026-03-11
 
-## 当前运行状态
+## 当前优先级
 
-运行中，v2026.3.2（**有新版 v2026.3.8 待更新，含 gpt-5.4 支持**）。
-主模型: openai-codex/gpt-5.3-codex
+Debugger 代码走查完成 5 轮迭代，主要 bug 已修复。
 
-## ✅ OpenClaw Debugger Console（已上线）
+## 最近的关键决策
 
-- **路径**：/root/.openclaw/debugger/（main.py + index.html）
-- **服务**：systemd user service `openclaw-debugger`，端口 8899，开机自启
-- **访问**：`ssh -L 8899:localhost:8899 root@43.160.242.46 -N` → http://localhost:8899
-- **功能**：Sessions 时间线 / Memory 预览 / Assets Gallery / Logs 实时流 / Config 高亮
+### Debugger 走查进展 (5 轮迭代，2026-03-11)
 
-```bash
-# 管理
-systemctl --user status openclaw-debugger
-systemctl --user restart openclaw-debugger
-```
+**已修复的关键 bug：**
+- CSS specificity bug：`#panel-graph { display: flex }` (1-0-0) 覆盖 `.panel { display: none }` (0-1-0) → Graph 面板始终可见 → 已移除 display:flex
+- `#graph-container { display: flex }` CSS rule 多余 → 已删除
+- Copy button XSS：data-text attribute 不安全 → 改用 `_copyMap` (JS Map)
+- `loadMoreMsgs` DOM bug：Regex 无法移除旧按钮 → 改用 `querySelector('.load-more-wrap')?.remove()`
+- `selectMemChip` onclick 单引号不安全 → 改用 data attributes
+- `Math.max(...[])` → `-Infinity`：空数组时崩溃 → 加长度守卫
+- Assets 加载全尺寸图：`/api/image` → 改为 `/api/thumb`
+- `extractImgPaths` 无法处理嵌套对象 → 改为递归 walk
+- Memory 侧边栏 border 动画不可靠 → 改用 box-shadow
 
-## ⚡ 待执行：更新 OpenClaw
+**新增功能：**
+- Sessions 侧边栏：搜索过滤 + 刷新按钮 + 键盘导航
+- Assets 侧边栏：刷新按钮
+- Memory tab：刷新按钮 + 错误处理
+- Trace panel：TOOL CALLS 分区（按类别着色）
+- `renderMd`：支持 ul/ol 列表、HR、空行间距
+- Memory file chips 显示频次 ×N
+- `switchTab` 切换时重置 nav-status
+- D3 CDN 加载失败错误处理
+- `_copyMap` session 切换时清空
 
-```bash
-source ~/.nvm/nvm.sh && npm update -g openclaw
-systemctl --user restart openclaw-gateway
-```
-v2026.3.8 含 gpt-5.4 支持。
+**后端修复：**
+- `/api/sessions` + `/api/memory` 支持 `?_=timestamp` 强制刷新
+- Assets API 加 `/api/thumb` 缩略图端点
 
-## 已修复（2026-03-10）AGENTS.md 两处发图 bug
+## 阻塞项
 
-1. 自检通过后不发，等确认 → 加"全部通过立即发"规则
-2. 谎称不能发图 → 行为红线第 7 条
+无。Debugger 功能稳定，可继续使用。
 
-## 模型 ID 规律
+## 部署信息
 
-- GPT-5.3-Codex: openai-codex/gpt-5.3-codex ✅ 当前
-- GPT-5.4: openai-codex/gpt-5.4 ⏳ 需更新至 v2026.3.8
+- Server: 43.160.242.46:/root/.openclaw/debugger/
+- Token: x_w-NfYtLw57mkbsipyifd9WIoGUR8vP
+- Port: 8899 (uvicorn), proxied via nginx at /debugger/
